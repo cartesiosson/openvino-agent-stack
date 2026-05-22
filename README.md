@@ -1,5 +1,18 @@
 # Intel Ultra 7(R) Series 2: Qwen 3-8B Local + Claude Code Integration
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Intel%20Core%20Ultra-Series%202%20%C2%B7%20Lunar%20Lake-0071C5?style=for-the-badge&logo=intel&logoColor=white" alt="Intel Core Ultra Series 2 — Lunar Lake">
+  <img src="https://img.shields.io/badge/Qwen-3--8B%20%2B%202.5--VL--7B-615CED?style=for-the-badge&logo=alibabacloud&logoColor=white" alt="Qwen 3-8B + Qwen 2.5-VL-7B">
+  <img src="https://img.shields.io/badge/OpenVINO-2026.1-005AA8?style=for-the-badge&logoColor=white" alt="OpenVINO 2026.1">
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/iGPU-Arc%20140V%20%C2%B7%20INT4-1E88E5?style=flat-square" alt="iGPU Arc 140V INT4">
+  <img src="https://img.shields.io/badge/Throughput-~18%20tok%2Fs-43A047?style=flat-square" alt="~18 tok/s">
+  <img src="https://img.shields.io/badge/Token%20cost-%240-43A047?style=flat-square" alt="$0 token cost">
+  <img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="MIT License">
+</p>
+
 > 🌍 **Versión en español**: [README.es.md](README.es.md)
 
 A local AI agent stack on **Intel Core Ultra (Lunar Lake)** — Qwen3-8B + Qwen2.5-VL-7B in INT4, zero token cost:
