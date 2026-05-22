@@ -1,4 +1,4 @@
-# ULTRA Series 2: Qwen 3.5 a 0$ en local
+# Intel Ultra 7(R) Series 2: Qwen 3-8B en local e Integracion Claude Code
 
 > 🌍 **English version**: [README.md](README.md)
 
