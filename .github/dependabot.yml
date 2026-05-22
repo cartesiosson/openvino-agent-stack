@@ -1,6 +1,9 @@
 # Dependabot config: keeps GitHub Actions and Docker base images up to date,
 # auto-opens PRs when a CVE or new release shows up.
 # https://docs.github.com/code-security/dependabot
+#
+# Reviewers are NOT set here (the property is deprecated in v2). Reviewer
+# assignment is handled by .github/CODEOWNERS.
 
 version: 2
 updates:
@@ -11,6 +14,8 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    assignees:
+      - cartesiosson
     commit-message:
       prefix: ci
       include: scope
@@ -25,6 +30,8 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    assignees:
+      - cartesiosson
     commit-message:
       prefix: chore
       include: scope
