@@ -1,0 +1,95 @@
+name: 🐛 Bug report
+description: Something that should work and doesn't.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        Before submitting, please:
+        - Make sure you're on the latest `main`.
+        - Check existing issues to avoid duplicates.
+        - **Do not paste secrets** (HF_TOKEN, API keys, personal data) in logs.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear, concise description. Include the actual error message.
+      placeholder: e.g. "OVMS reports 'USM Host allocation failed' when loading the second model."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. Pretend the reader is starting from a fresh checkout.
+      placeholder: |
+        1. `cp .env.example .env` and set HF_TOKEN.
+        2. `make models`
+        3. `make up`
+        4. `make smoke`
+        5. Observe error in `make logs`.
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Settings → System → About → "Specifications" → "Version" + "OS build"
+      placeholder: Windows 11 Pro 24H2 (26100.2454)
+    validations:
+      required: true
+
+  - type: input
+    id: wsl
+    attributes:
+      label: WSL version + RAM allocated
+      description: From PowerShell `wsl -l -v` and `wsl --version`. From WSL `free -h`.
+      placeholder: WSL 2.5.10 / Ubuntu-24.04 / 26 GiB allocated
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: CPU model + iGPU
+      description: e.g. "Core Ultra 7 258V / Arc 140V". Also `ls /dev/dri` and `ls /dev/dxg` output.
+      placeholder: Core Ultra 7 258V / Arc 140V — /dev/dri/{card0,renderD128} present
+    validations:
+      required: true
+
+  - type: textarea
+    id: ovms-logs
+    attributes:
+      label: OVMS logs
+      description: Output of `docker compose logs ovms --tail=200`. Redact anything that looks like a secret.
+      render: shell
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Relevant .env (no secrets)
+      description: Paste your `.env` with `HF_TOKEN` redacted. Helps spot misconfig.
+      render: dotenv
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmations
+      options:
+        - label: I removed secrets/tokens from the logs and `.env` above.
+          required: true
+        - label: I've read [CONTRIBUTING.md](https://github.com/cartesiosson/openvino-agent-stack/blob/main/CONTRIBUTING.md).
+          required: true
