@@ -34,6 +34,7 @@ Measured throughput: **~18-20 tokens/s** generating with Qwen3-8B INT4 on the Ar
 ## Table of Contents
 
 - [Why local? No tokens, no network, no strings](#why-local-no-tokens-no-network-no-strings)
+- [Architecture](#architecture)
 - [Models](#models)
 - [Requirements](#requirements)
 - [Configuration (`.env`) and HuggingFace token](#configuration-env-and-huggingface-token)
@@ -63,6 +64,46 @@ Almost the entire "LLM agent" ecosystem is built on burning tokens against paid 
 - **Hardware you already own**. Lunar Lake / Arrow Lake / Meteor Lake ship with a **competent NPU + iGPU** that most people don't use for anything. This stack puts them to work.
 
 **What this is NOT for**: tasks that demand Sonnet / Opus / GPT-5 — complex refactors over large codebases, high-level multi-step reasoning, non-trivial code. An 8B-INT4 is ~50× smaller than a frontier model; you'll feel it. But for chat, RAG, simple function calling, assisted search and agent prototypes, **it's enough**.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    User([👤 User<br/>browser])
+    CC([🖥️ Claude Code CLI<br/>optional])
+
+    subgraph Stack[Docker Compose stack on WSL2]
+        OWUI[Open WebUI<br/>:3000]
+        PIPE[Pipelines<br/>ReAct agent<br/>:9099]
+        OVMS[OVMS<br/>OpenVINO Model Server<br/>:8000 / :9000]
+        SX[SearXNG<br/>:8080]
+    end
+
+    subgraph HW[Intel Core Ultra 7 258V]
+        IGPU[(iGPU Arc 140V<br/>Qwen3-8B INT4<br/>~18 tok/s)]
+        CPU[(CPU<br/>Qwen2.5-VL-7B INT4<br/>~6 tok/s)]
+    end
+
+    Router[claude-code-router<br/>or LiteLLM proxy]
+
+    User -->|HTTPS| OWUI
+    OWUI -->|OpenAI /v3| OVMS
+    OWUI -->|model: react-agent| PIPE
+    OWUI -->|search JSON| SX
+    PIPE -->|OpenAI /v3| OVMS
+    PIPE -->|search JSON| SX
+
+    OVMS --> IGPU
+    OVMS --> CPU
+
+    CC -.->|Anthropic API| Router
+    Router -.->|OpenAI /v3| OVMS
+```
+
+The single OVMS instance serves both models — clients pick which one via the
+`"model"` field in the chat-completions request. Claude Code only needs a
+small proxy/router (right side, dashed) because it speaks the Anthropic
+Messages format natively.
 
 ## Models
 

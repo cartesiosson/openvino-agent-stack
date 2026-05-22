@@ -33,6 +33,7 @@ Rendimiento medido: **~18-20 tokens/s** generando con Qwen3-8B INT4 sobre la iGP
 ## Índice
 
 - [¿Por qué local? Sin tokens, sin red, sin compromisos](#por-qué-local-sin-tokens-sin-red-sin-compromisos)
+- [Arquitectura](#arquitectura)
 - [Modelos](#modelos)
 - [Requisitos](#requisitos)
 - [Configuración (`.env`) y token de HuggingFace](#configuración-env-y-token-de-huggingface)
@@ -62,6 +63,46 @@ Casi todo el ecosistema de "agentes con LLM" se basa en consumir tokens contra A
 - **Hardware que ya tienes**. Lunar Lake / Arrow Lake / Meteor Lake llevan **NPU + iGPU competentes** que la mayoría de la gente no usa para nada. Este stack los pone a trabajar.
 
 **¿Para qué NO es esto?** Para tareas que exigen Sonnet / Opus / GPT-5: refactors complejos sobre bases grandes, razonamiento multi-paso de alto nivel, código no trivial. Un 8B-INT4 es ~50× más pequeño que un modelo frontera; eso se nota. Pero para chat, RAG, function calling sencillo, búsqueda asistida y prototipos de agentes, **te llega**.
+
+## Arquitectura
+
+```mermaid
+flowchart LR
+    User([👤 Usuario<br/>navegador])
+    CC([🖥️ Claude Code CLI<br/>opcional])
+
+    subgraph Stack[Stack Docker Compose en WSL2]
+        OWUI[Open WebUI<br/>:3000]
+        PIPE[Pipelines<br/>agente ReAct<br/>:9099]
+        OVMS[OVMS<br/>OpenVINO Model Server<br/>:8000 / :9000]
+        SX[SearXNG<br/>:8080]
+    end
+
+    subgraph HW[Intel Core Ultra 7 258V]
+        IGPU[(iGPU Arc 140V<br/>Qwen3-8B INT4<br/>~18 tok/s)]
+        CPU[(CPU<br/>Qwen2.5-VL-7B INT4<br/>~6 tok/s)]
+    end
+
+    Router[claude-code-router<br/>o proxy LiteLLM]
+
+    User -->|HTTPS| OWUI
+    OWUI -->|OpenAI /v3| OVMS
+    OWUI -->|model: react-agent| PIPE
+    OWUI -->|search JSON| SX
+    PIPE -->|OpenAI /v3| OVMS
+    PIPE -->|search JSON| SX
+
+    OVMS --> IGPU
+    OVMS --> CPU
+
+    CC -.->|Anthropic API| Router
+    Router -.->|OpenAI /v3| OVMS
+```
+
+Una sola instancia de OVMS sirve los dos modelos — los clientes eligen cuál vía
+el campo `"model"` del request de chat-completions. Claude Code solo necesita
+un pequeño proxy/router (parte derecha, líneas punteadas) porque habla el
+formato Anthropic Messages de forma nativa.
 
 ## Modelos
 
