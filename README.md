@@ -11,6 +11,7 @@
   <img src="https://img.shields.io/badge/Throughput-~18%20tok%2Fs-43A047?style=flat-square" alt="~18 tok/s">
   <img src="https://img.shields.io/badge/Token%20cost-%240-43A047?style=flat-square" alt="$0 token cost">
   <img src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square" alt="MIT License">
+  <a href="https://github.com/cartesiosson/openvino-agent-stack/actions/workflows/ci.yml"><img src="https://github.com/cartesiosson/openvino-agent-stack/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
 > 🌍 **Versión en español**: [README.es.md](README.es.md)
