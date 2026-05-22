@@ -332,6 +332,31 @@ Open WebUI → Admin Panel → Pipelines → `react-agent` → Valves. You can t
 - `MODEL` (point at a different OVMS model)
 - `SHOW_TRACE` (hide the trace if you only want the final answer)
 
+**Handling Qwen3's known quirks**:
+
+Qwen3 ships with **thinking mode enabled by default** — it emits free-form
+`<think>...</think>` blocks before any structured output. That breaks the
+strict `Thought: / Action: / Action Input:` grammar the ReAct loop relies on.
+This pipeline applies three defensive patches:
+
+| Patch | Why it's needed |
+|---|---|
+| System prompt starts with `/no_think` | Qwen3's official directive to skip the thinking phase. Without it the model rambles in prose and the regex parser bails on turn 1. |
+| Output is run through `_strip_thinking()` (removes any `<think>...</think>` blocks) before parsing | Defensive — Qwen3 occasionally still emits a short `<think>` even with `/no_think`. We strip it instead of failing. |
+| System prompt is in **English** with a few-shot example | Qwen3 follows English ReAct system prompts more reliably than Spanish; instruction tuning is heavily weighted toward English. |
+| Default `TEMPERATURE = 0.0` (was 0.2) | Format compliance becomes deterministic. Raise via valves only if you want stylistic variety in answers. |
+
+These four patches together make the loop go from "fails immediately"
+to "completes in ~4 s for a `calc` query" on the same hardware.
+
+Other Qwen3 caveats that are out of scope of this pipeline but worth knowing:
+- **Native OpenAI tool calling**: Qwen3-8B's `tools=[...]` support is shaky
+  via OVMS. We use a text-prompted ReAct loop instead, which is slower but
+  far more reliable on small models.
+- **Context window**: ~32k tokens. Long ReAct traces with many tool calls
+  can blow past it; lower `MAX_ITERATIONS` or `MAX_TOKENS_PER_STEP` if you
+  see truncation.
+
 **Pipelines vs native Tools — when to use which**:
 - *Native tools* (step 5): the LLM decides when to call them via `tools=[...]` in the API. Faster, less transparent.
 - *ReAct pipeline*: explicit loop in Python, you control iterations and prompt, you see every step. More robust when the model is shaky on native function calling.

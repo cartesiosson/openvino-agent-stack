@@ -327,6 +327,32 @@ Open WebUI → Admin Panel → Pipelines → `react-agent` → Valves. Puedes aj
 - `MODEL` (cambiar a otro modelo de OVMS)
 - `SHOW_TRACE` (oculta el trace si quieres sólo la respuesta final)
 
+**Manejando las peculiaridades conocidas de Qwen3**:
+
+Qwen3 viene con **thinking mode activado por defecto** — emite bloques
+`<think>...</think>` con razonamiento libre antes de cualquier salida
+estructurada. Eso rompe la gramática estricta `Thought: / Action: /
+Action Input:` en la que se basa el loop ReAct. Este pipeline aplica
+cuatro parches defensivos:
+
+| Parche | Por qué es necesario |
+|---|---|
+| El system prompt empieza con `/no_think` | Directiva oficial de Qwen3 para saltarse la fase de thinking. Sin esto el modelo divaga en prosa y el parser regex falla en el turno 1. |
+| La salida pasa por `_strip_thinking()` (elimina cualquier bloque `<think>...</think>`) antes de parsear | Defensa por si Qwen3 ignora el `/no_think` en algún turno. Lo limpiamos en vez de fallar. |
+| System prompt en **inglés** con ejemplo few-shot | Qwen3 sigue mejor las instrucciones en inglés; el instruction-tuning está sesgado hacia ese idioma. |
+| `TEMPERATURE` default `0.0` (antes 0.2) | El cumplimiento del formato se vuelve determinista. Súbela vía valves solo si quieres variedad estilística en las respuestas. |
+
+Estos cuatro parches juntos llevan el loop de "falla en el primer turno"
+a "completa en ~4 s una query con `calc`" sobre el mismo hardware.
+
+Otros caveats de Qwen3 que quedan fuera del pipeline pero conviene saber:
+- **Tool calling nativo de OpenAI**: el soporte de `tools=[...]` de
+  Qwen3-8B vía OVMS es flojo. Usamos un loop ReAct por texto en su
+  lugar — más lento, pero mucho más fiable en modelos pequeños.
+- **Ventana de contexto**: ~32k tokens. Traces ReAct largos con muchas
+  llamadas a tools pueden pasarse; baja `MAX_ITERATIONS` o
+  `MAX_TOKENS_PER_STEP` si ves truncado.
+
 **Pipelines vs Tools nativas — cuándo usar qué**:
 - *Tools nativas* (paso 5): el LLM elige cuándo llamarlas vía `tools=[...]` en la API. Más rápido, menos transparente.
 - *ReAct pipeline*: loop explícito en Python, controlas iteraciones y prompt, ves todos los pasos. Más robusto cuando el modelo flojea en function calling nativo.
