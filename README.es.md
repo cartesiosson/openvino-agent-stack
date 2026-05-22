@@ -16,6 +16,7 @@ Rendimiento medido: **~18-20 tokens/s** generando con Qwen3-8B INT4 sobre la iGP
 - [¿Por qué local? Sin tokens, sin red, sin compromisos](#por-qué-local-sin-tokens-sin-red-sin-compromisos)
 - [Modelos](#modelos)
 - [Requisitos](#requisitos)
+- [Configuración (`.env`) y token de HuggingFace](#configuración-env-y-token-de-huggingface)
 - [Pasos](#pasos)
   - [1. Convertir modelos](#1-convertir-modelos-one-shot)
   - [2. Levantar el stack](#2-levantar-el-stack)
@@ -68,6 +69,59 @@ Casi todo el ecosistema de "agentes con LLM" se basa en consumir tokens contra A
 > - Esperar a que Microsoft/Intel habiliten el passthrough de NPU en WSL2 (en roadmap, sin fecha confirmada).
 >
 > Por eso este stack usa **iGPU para el LLM y CPU para el VLM**, sin tocar la NPU.
+
+## Configuración (`.env`) y token de HuggingFace
+
+Antes de ejecutar nada, copia `.env.example` a `.env`:
+
+```bash
+cp .env.example .env
+```
+
+Los valores de ejemplo son sensatos por defecto — para un install local de un solo usuario, lo único que probablemente necesitas tocar es `HF_TOKEN` (ver más abajo).
+
+### Variables de `.env`
+
+| Variable             | Default                               | Para qué sirve |
+|----------------------|----------------------------------------|----------------|
+| `OVMS_IMAGE`         | `openvino/model_server:latest-gpu`    | Imagen Docker de OVMS. Cambia a `:latest` (sin sufijo `-gpu`) si no tienes iGPU Intel y solo quieres CPU. |
+| `OVMS_REST_PORT`     | `8000`                                 | Puerto del host mapeado a la API REST OpenAI-compatible de OVMS. |
+| `OVMS_GRPC_PORT`     | `9000`                                 | Puerto del host mapeado a la API gRPC de OVMS (la usa `tritonclient`, no Open WebUI). |
+| `OPENWEBUI_IMAGE`    | `ghcr.io/open-webui/open-webui:main`  | Imagen de Open WebUI (frontend de chat). |
+| `OPENWEBUI_PORT`     | `3000`                                 | Puerto del host donde abres Open WebUI en el navegador. |
+| `OPENWEBUI_AUTH`     | `False`                                | Si lo pones a `True`, Open WebUI pide login (la primera cuenta creada = admin). Para dev local de un solo usuario, déjalo en `False`. |
+| `PIPELINES_API_KEY`  | `0p3n-w3bu!`                          | Clave compartida entre Open WebUI y el contenedor de Pipelines (agente ReAct). No sale a internet, pero rótala si expones el stack en una LAN. |
+| `HF_TOKEN`           | *(vacío)*                              | Token de lectura de HuggingFace. Opcional para modelos públicos (los dos Qwen aquí lo son). Obligatorio para modelos gated/privados. |
+
+### Conseguir los modelos de HuggingFace
+
+El script `scripts/export-models.sh` se baja estos dos modelos de HuggingFace y los convierte a IR de OpenVINO con cuantización INT4:
+
+- [`Qwen/Qwen3-8B`](https://huggingface.co/Qwen/Qwen3-8B) — text generation, ~16 GB FP16 de descarga → ~5 GB INT4 en disco.
+- [`Qwen/Qwen2.5-VL-7B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct) — vision-language, ~16 GB FP16 → ~5 GB INT4.
+
+Ambos son **públicos** — no necesitas token estrictamente — pero **se recomienda** tener un `HF_TOKEN`:
+
+1. Las descargas anónimas tienen rate limit; con token evitas throttling en archivos grandes.
+2. Estás listo si más adelante usas modelos gated (algunas Llama, comerciales de Mistral, etc.).
+
+**Pasos para sacar un token HF**:
+
+1. Crea una cuenta gratuita en https://huggingface.co si no la tienes.
+2. Entra en https://huggingface.co/settings/tokens.
+3. Click en **"Create new token"** → ponle un nombre (p.ej. `openvino-agent-stack`) → tipo **"Read"** (read-only basta; NO marques "Write" para este caso).
+4. Copia el valor `hf_...`.
+5. Pégalo en tu `.env`:
+   ```bash
+   HF_TOKEN=hf_tu_token_aqui
+   ```
+6. Vuelve a lanzar `./scripts/export-models.sh` — el script lee `HF_TOKEN` del `.env` automáticamente.
+
+> ⚠️ **No subas `.env` al repo**. El `.gitignore` ya lo excluye (lo que se publica es `.env.example`). Si en algún momento pegas el token en chats, logs, capturas o PRs, dalo por filtrado y rótalo desde la página de tokens de HF.
+
+**Aceptar licencia (modelos gated)**:
+
+Si más adelante cambias a un modelo gated (algunas Llama, comerciales de Mistral, etc.), HuggingFace bloquea la descarga hasta que entres en la página del modelo en el navegador y hagas click en *"Agree to the license"*. El `HF_TOKEN` por sí solo **no** se salta esto — sólo lo aceptas tú vía web. Después, el mismo token le sirve a `optimum-cli` para descargar los pesos.
 
 ## Pasos
 
