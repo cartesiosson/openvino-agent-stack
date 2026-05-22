@@ -371,6 +371,6 @@ Sweet spot: pedirle "explica este fichero", "genera un test para esta función",
 
 ## Autor
 
-**Mariano Ortega** · 2026
+Mariano Ortega de Mues, Ph.D, Msc AI · 2026
 
 Si este proyecto te resulta útil, una estrella ⭐ en GitHub anima a seguir abriendo cosas. PRs y issues bienvenidos.

@@ -377,6 +377,6 @@ Sweet spot: "explain this file", "write a test for this function", "what does th
 
 ## Author
 
-**Mariano Ortega** · 2026
+Mariano Ortega de Mues, Ph.D, Msc AI · 2026
 
 If this project helps you, a ⭐ on GitHub keeps me motivated to open more things. PRs and issues welcome.
