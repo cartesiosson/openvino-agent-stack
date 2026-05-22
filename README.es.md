@@ -72,6 +72,12 @@ Casi todo el ecosistema de "agentes con LLM" se basa en consumir tokens contra A
 
 > **Por qué no los dos en iGPU**: el Arc 140V comparte RAM con el sistema y su pool de USM no permite alojar simultáneamente dos modelos de 5 GB INT4 + sus KV cache + sus compile blobs. Colocación híbrida (LLM en GPU, VLM en CPU) es el punto dulce para esta clase de hardware: el chat va rápido (18-20 tok/s) y el VLM va a 3-8 tok/s solo cuando subes una imagen, donde el coste del vision encoder ya domina la latencia.
 
+<p align="center">
+  <img src="docs/img/openwebui-qwen25vl-cpu.png" alt="Qwen2.5-VL-7B describiendo una foto de un mapache desde Open WebUI — el Administrador de tareas muestra GPU Power 0 W, VRAM 6.5 GB y CPU al 98% mientras el VLM ejecuta el vision encoder y genera tokens" width="100%">
+  <br>
+  <em>Qwen2.5-VL-7B en CPU describiendo una imagen subida de un mapache — el Administrador de tareas muestra 0 W en el iGPU y 98 % de uso de CPU. El iGPU queda libre para Qwen3-8B; el VLM solo entra en escena cuando hay una imagen que mirar.</em>
+</p>
+
 ## Requisitos
 
 - Windows con WSL2 + Docker Desktop, **integración WSL activada** para esta distro.
