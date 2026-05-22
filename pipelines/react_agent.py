@@ -43,29 +43,45 @@ def _safe_calc(expr: str) -> str:
         return f"error: {e}"
 
 
-SYSTEM_PROMPT = """Eres un agente ReAct. Resuelves la pregunta del usuario usando herramientas.
+SYSTEM_PROMPT = """/no_think
+You are a ReAct agent. You solve the user's question using tools.
 
-Tools disponibles:
-- search(query): búsqueda web vía SearXNG, devuelve top 5 snippets.
-- fetch(url): GET de una URL http(s), devuelve ~4k chars de texto plano.
-- calc(expression): aritmética segura, p.ej. (3+4)*2**3.
+TOOLS:
+- search(query): SearXNG web search, returns top 5 snippets.
+- fetch(url): HTTP GET on http(s) URL, returns up to 4k chars of cleaned text.
+- calc(expression): safe arithmetic eval. Examples: (3+4)*2**3, 365.25*40.
 
-Formato OBLIGATORIO en cada turno — emite UNA de estas dos formas:
+OUTPUT FORMAT — every turn you emit EXACTLY ONE of these two shapes. No prose around it. No <think> tags. No commentary.
 
-Thought: <razonamiento corto>
-Action: <nombre_tool>
-Action Input: <input en una sola línea>
+Shape A (you need a tool):
+Thought: <one short sentence>
+Action: <tool_name>
+Action Input: <single-line input>
 
-O bien, cuando ya tengas la respuesta:
+Shape B (you have the final answer):
+Thought: <one short sentence>
+Final Answer: <answer for the user, in their language>
 
-Thought: <razonamiento corto>
-Final Answer: <respuesta para el usuario, en su idioma>
+RULES:
+- Stop immediately after `Action Input:` (don't write "Observation:" yourself, the system fills it).
+- One Action per turn.
+- If a tool fails, try a different approach next turn.
+- If the question doesn't need tools, go straight to Shape B.
 
-Reglas:
-- Detente después de "Action Input:" o "Final Answer:". NO escribas "Observation:" tú mismo.
-- Una Action por turno, nunca dos.
-- Si una tool falla, prueba otro enfoque.
-- Si la pregunta no necesita tools, salta directo a Final Answer.
+EXAMPLE:
+
+Question: How old would someone born on 1963-02-17 be on 2026-05-22?
+
+Thought: I'll compute the difference in days and divide by 365.25.
+Action: calc
+Action Input: (2026 - 1963) - (1 if (5, 22) < (2, 17) else 0)
+
+Observation: 63
+
+Thought: 63 years.
+Final Answer: 63 años.
+
+END EXAMPLE.
 """
 
 ACTION_RE = re.compile(
@@ -73,6 +89,13 @@ ACTION_RE = re.compile(
     re.S,
 )
 FINAL_RE = re.compile(r"Final Answer:\s*(.+)$", re.S)
+THINK_RE = re.compile(r"<think>.*?</think>\s*", re.S)
+
+
+def _strip_thinking(text: str) -> str:
+    """Qwen3 may emit <think>...</think> blocks even with /no_think; drop them
+    so the ReAct parser sees clean output."""
+    return THINK_RE.sub("", text).strip()
 
 
 class Pipeline:
@@ -81,7 +104,7 @@ class Pipeline:
         MODEL: str = Field(default="qwen3-8b")
         SEARXNG_URL: str = Field(default="http://searxng:8080/search")
         MAX_ITERATIONS: int = Field(default=6)
-        TEMPERATURE: float = Field(default=0.2)
+        TEMPERATURE: float = Field(default=0.0)
         MAX_TOKENS_PER_STEP: int = Field(default=512)
         FETCH_MAX_CHARS: int = Field(default=4000)
         SHOW_TRACE: bool = Field(
@@ -183,10 +206,12 @@ class Pipeline:
 
         for step in range(self.valves.MAX_ITERATIONS):
             try:
-                out = self._call_llm(scratch).strip()
+                raw = self._call_llm(scratch).strip()
             except Exception as e:
                 yield f"\n\n_LLM error: {e}_"
                 return
+
+            out = _strip_thinking(raw)
 
             if self.valves.SHOW_TRACE:
                 yield f"\n```\n{out}\n```\n"
