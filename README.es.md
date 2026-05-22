@@ -1,7 +1,7 @@
 # Intel Ultra 7(R) Series 2: Qwen 3-8B en local e Integracion Claude Code
 
 <p align="center">
-  <img src="docs/img/intel-core-ultra-logo.jpeg" alt="Intel Core Ultra" height="90">
+  <img src="docs/img/intel-core-ultra-7-logo.jpeg" alt="Intel Core Ultra 7" height="90">
   &nbsp;&nbsp;&nbsp;&nbsp;
   <img src="docs/img/intel-arc-graphics-logo.jpeg" alt="Intel Arc Graphics" height="90">
 </p>
