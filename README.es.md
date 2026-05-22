@@ -1,6 +1,12 @@
 # Intel Ultra 7(R) Series 2: Qwen 3-8B en local e Integracion Claude Code
 
 <p align="center">
+  <img src="docs/img/intel-core-ultra-logo.jpeg" alt="Intel Core Ultra" height="90">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="docs/img/intel-arc-graphics-logo.jpeg" alt="Intel Arc Graphics" height="90">
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Intel%20Core%20Ultra-Series%202%20%C2%B7%20Lunar%20Lake-0071C5?style=for-the-badge&logo=intel&logoColor=white" alt="Intel Core Ultra Series 2 — Lunar Lake">
   <img src="https://img.shields.io/badge/Qwen-3--8B%20%2B%202.5--VL--7B-615CED?style=for-the-badge&logo=alibabacloud&logoColor=white" alt="Qwen 3-8B + Qwen 2.5-VL-7B">
   <img src="https://img.shields.io/badge/OpenVINO-2026.1-005AA8?style=for-the-badge&logoColor=white" alt="OpenVINO 2026.1">
