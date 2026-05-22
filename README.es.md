@@ -15,6 +15,12 @@
 
 > 🌍 **English version**: [README.md](README.md)
 
+<p align="center">
+  <img src="docs/img/openwebui-qwen3-igpu.png" alt="Open WebUI corriendo Qwen3-8B sobre el iGPU Intel Arc 140V — el panel de rendimiento del Administrador de tareas muestra 94% de uso de GPU a 1950 MHz / 7 W respondiendo a 'What is OpenVINO?'" width="100%">
+  <br>
+  <em>Qwen3-8B respondiendo en vivo desde el iGPU Arc 140V — 94% de uso, 1950 MHz, 7 W. Toda la conversación corre en local, sin llamadas a APIs.</em>
+</p>
+
 Stack de agente local sobre **Intel Core Ultra (Lunar Lake)**:
 - **OVMS** (OpenVINO Model Server) sirviendo modelos en INT4 sobre iGPU Arc 140V.
 - **Open WebUI** como frontend de chat / agente.
