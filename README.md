@@ -1,4 +1,4 @@
-# Intel Ultra 7(R) Series 2: Qwen 3-8B en local e Integracion Claude Code
+# Intel Ultra 7(R) Series 2: Qwen 3-8B Local + Claude Code Integration
 
 > 🌍 **Versión en español**: [README.es.md](README.es.md)
 
