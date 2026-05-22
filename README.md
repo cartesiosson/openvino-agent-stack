@@ -1,102 +1,128 @@
-# OVMS + Open WebUI sobre Intel Core Ultra (Lunar Lake)
+# ULTRA Series 2: Qwen 3.5 a 0$ en local
 
-Stack de agente local con:
-- **OVMS** (OpenVINO Model Server) sirviendo modelos en INT4 sobre iGPU Arc 140V.
-- **Open WebUI** como frontend de chat / agente.
-- **Pipelines** con un agente **ReAct** (loop Thought / Action / Observation) + tools de búsqueda, fetch y aritmética.
-- **SearXNG** local para búsqueda web sin enviar queries a terceros.
-- Backend único de OVMS expuesto a Open WebUI y a Claude Code vía API compatible con OpenAI.
+> 🌍 **Versión en español**: [README.es.md](README.es.md)
 
-Rendimiento medido: **~18-20 tokens/s** generando con Qwen3-8B INT4 sobre la iGPU Arc 140V de un Core Ultra 7 258V.
+A local AI agent stack on **Intel Core Ultra (Lunar Lake)** — Qwen3-8B + Qwen2.5-VL-7B in INT4, zero token cost:
 
-## ¿Por qué local? Sin tokens, sin red, sin compromisos
+- **OVMS** (OpenVINO Model Server) serving INT4 models on the Arc 140V iGPU.
+- **Open WebUI** as the chat / agent frontend.
+- **Pipelines** running a **ReAct agent** (Thought / Action / Observation loop) with search, fetch and arithmetic tools.
+- **SearXNG** locally for web search without leaking queries to third parties.
+- A single OVMS backend exposed to Open WebUI and to Claude Code via an OpenAI-compatible API.
 
-Casi todo el ecosistema de "agentes con LLM" se basa en consumir tokens contra APIs de pago (OpenAI, Anthropic, Google) o en infraestructura cloud que se factura por uso. Este proyecto demuestra que, con un **Core Ultra de portátil** (Lunar Lake, integrada Arc 140V), puedes:
+Measured throughput: **~18-20 tokens/s** generating with Qwen3-8B INT4 on the Arc 140V iGPU of a Core Ultra 7 258V.
 
-- **Cero consumo de tokens externos**. Cada palabra que genera el modelo cuesta exactamente lo mismo que tener el portátil encendido. Si chateas todo el día o si lo dejas dormido en el cajón, el coste marginal de inferencia es **cero**. Adiós a las sorpresas en la factura por dejarse un loop suelto.
-- **Privacidad total**. Los prompts no salen de la máquina. Para entornos con datos sensibles (clínicos, jurídicos, propiedad intelectual) o para empresas con políticas DLP, esto cambia las reglas: el agente puede leer documentos que jamás podrías mandar a una API externa.
-- **Offline real**. Funciona sin red. En viajes, demos en estand, entornos air-gapped, o cuando la wifi del cliente es un drama, sigues teniendo asistente. La única vez que necesitas internet es para la descarga inicial de los pesos.
-- **Latencia local**. ~18-20 tokens/s en iGPU INT4 son suficientes para una conversación fluida y para tareas de agente que no requieren razonamiento de frontera. Primer token < 1 s.
-- **Sandbox sin facturas**. Iteras prompts, herramientas, pipelines ReAct, function calling, RAG… sin que el experimento te cueste un céntimo. Ideal para aprender, prototipar, enseñar, y para los proyectos que nunca harías "por si quedan caros".
-- **Hardware que ya tienes**. Lunar Lake / Arrow Lake / Meteor Lake llevan **NPU + iGPU competentes** que la mayoría de la gente no usa para nada. Este stack los pone a trabajar.
+## Table of Contents
 
-**¿Para qué NO es esto?** Para tareas que exigen Sonnet / Opus / GPT-5: refactors complejos sobre bases grandes, razonamiento multi-paso de alto nivel, código no trivial. Un 8B-INT4 es ~50× más pequeño que un modelo frontera; eso se nota. Pero para chat, RAG, function calling sencillo, búsqueda asistida y prototipos de agentes, **te llega**.
+- [Why local? No tokens, no network, no strings](#why-local-no-tokens-no-network-no-strings)
+- [Models](#models)
+- [Requirements](#requirements)
+- [Setup](#setup)
+  - [1. Convert the models](#1-convert-the-models-one-shot)
+  - [2. Start the stack](#2-start-the-stack)
+  - [3. Hit OVMS directly](#3-hit-ovms-directly-no-open-webui)
+  - [4. Use it from Open WebUI](#4-use-it-from-open-webui)
+  - [5. Configure the agent](#5-configure-the-agent)
+  - [6. ReAct agent](#6-react-agent-thought--action--observation-loop)
+- [OVMS as a Claude Code backend](#ovms-as-a-claude-code-backend)
+- [Memory and performance](#memory-and-performance)
+- [Project structure](#project-structure)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+- [Author](#author)
 
-## Modelos
+## Why local? No tokens, no network, no strings
 
-| Modelo                       | Tipo            | Precisión | Device  | Endpoint OpenAI `model` |
-|------------------------------|-----------------|-----------|---------|--------------------------|
-| `Qwen/Qwen3-8B`              | text-generation | INT4      | **iGPU**| `qwen3-8b`               |
-| `Qwen/Qwen2.5-VL-7B-Instruct`| image-text      | INT4      | **CPU** | `qwen25-vl-7b`           |
+Almost the entire "LLM agent" ecosystem is built on burning tokens against paid APIs (OpenAI, Anthropic, Google) or on cloud infrastructure billed per use. This project shows that, on a **laptop-class Core Ultra** (Lunar Lake, Arc 140V iGPU), you can:
 
-> **Por qué no los dos en iGPU**: el Arc 140V comparte RAM con el sistema y su pool de USM no permite alojar simultáneamente dos modelos de 5 GB INT4 + sus KV cache + sus compile blobs. Colocación híbrida (LLM en GPU, VLM en CPU) es el punto dulce para esta clase de hardware: el chat va rápido (18-20 tok/s) y el VLM va a 3-8 tok/s solo cuando subes una imagen, donde el coste del vision encoder ya domina la latencia.
+- **Zero external token cost**. Every word the model generates costs exactly the same as having the laptop on. Whether you chat all day or leave it sleeping in a drawer, the marginal cost of inference is **zero**. No more bill shock from a runaway loop.
+- **Total privacy**. Prompts never leave the machine. For environments with sensitive data (clinical, legal, IP) or companies with DLP policies, this changes the game: the agent can read documents you would never be allowed to send to an external API.
+- **Real offline**. Works without network. Travel, booth demos, air-gapped environments, or when the client's wifi is a nightmare — you still have an assistant. The only time you need internet is for the initial weight download.
+- **Local latency**. ~18-20 tokens/s on iGPU INT4 is enough for a fluid conversation and for agent tasks that don't require frontier reasoning. First token < 1 s.
+- **Bill-free sandbox**. Iterate on prompts, tools, ReAct pipelines, function calling, RAG… without the experiment costing you a cent. Ideal for learning, prototyping, teaching, and for the projects you'd never try "in case it gets expensive".
+- **Hardware you already own**. Lunar Lake / Arrow Lake / Meteor Lake ship with a **competent NPU + iGPU** that most people don't use for anything. This stack puts them to work.
 
-## Requisitos
+**What this is NOT for**: tasks that demand Sonnet / Opus / GPT-5 — complex refactors over large codebases, high-level multi-step reasoning, non-trivial code. An 8B-INT4 is ~50× smaller than a frontier model; you'll feel it. But for chat, RAG, simple function calling, assisted search and agent prototypes, **it's enough**.
 
-- Windows con WSL2 + Docker Desktop, **integración WSL activada** para esta distro.
-  - Docker Desktop → Settings → Resources → WSL Integration → habilita tu distro.
-- iGPU expuesta a WSL: `ls /dev/dri` debe mostrar `card0` / `renderD128`.
-- RAM: 32 GB físicos en Windows, **asignados al menos 24 GB a WSL** (por defecto WSL recorta a ~50 % del host). Si `free -h` dentro de WSL muestra menos, crea `%USERPROFILE%\.wslconfig` con `[wsl2]\nmemory=26GB\nswap=8GB` y reinicia con `wsl --shutdown`.
-- ~80 GB libres para el cache de HuggingFace + IR convertidos.
-- Acceso a internet para descargar pesos.
+## Models
 
-> **iGPU Intel + WSL2**: requiere drivers del host (Windows) actualizados y la imagen `openvino/model_server:latest-gpu` (que ya incluye `intel-opencl-icd` y `libze-intel-gpu`). Este `docker-compose.yml` ya monta `/dev/dxg` y `/usr/lib/wsl` con el `LD_LIBRARY_PATH` correcto para que el driver del host se vea desde dentro del contenedor.
+| Model                          | Type            | Precision | Device   | OpenAI `model` endpoint |
+|--------------------------------|-----------------|-----------|----------|--------------------------|
+| `Qwen/Qwen3-8B`                | text-generation | INT4      | **iGPU** | `qwen3-8b`               |
+| `Qwen/Qwen2.5-VL-7B-Instruct`  | image-text      | INT4      | **CPU**  | `qwen25-vl-7b`           |
 
-> ⚠️ **NPU (Intel AI Boost) no es accesible desde WSL2 en esta versión**. La NPU de Lunar Lake / Meteor Lake / Arrow Lake se expone en Linux nativo vía `/dev/accel/accel0` con el módulo de kernel `intel_vpu`, pero WSL2 no enruta ese device al kernel Linux a día de hoy. En el host se verifica con `ls /dev/accel` — aparecerá vacío. Si quieres usar la NPU para inferencia (p.ej. ~10-20 tok/s en LLMs pequeños sin tocar el iGPU), tienes dos caminos:
-> - Salir de WSL2 y correr OVMS directamente en Windows (PowerShell + binario nativo), rompiendo este stack Docker.
-> - Esperar a que Microsoft/Intel habiliten el passthrough de NPU en WSL2 (en roadmap, sin fecha confirmada).
+> **Why not both on iGPU**: the Arc 140V shares RAM with the system and its USM pool can't hold two 5 GB INT4 models + their KV caches + their compile blobs at once. Hybrid placement (LLM on GPU, VLM on CPU) is the sweet spot for this class of hardware: chat is fast (18-20 tok/s) and the VLM runs at 3-8 tok/s only when you drop in an image, where the vision encoder's cost dominates latency anyway.
+
+## Requirements
+
+- Windows with WSL2 + Docker Desktop, **WSL integration enabled** for this distro.
+  - Docker Desktop → Settings → Resources → WSL Integration → enable your distro.
+- iGPU exposed to WSL: `ls /dev/dri` must show `card0` / `renderD128`.
+- RAM: 32 GB physical on Windows, **at least 24 GB allocated to WSL** (WSL defaults to ~50% of host). If `free -h` inside WSL shows less, create `%USERPROFILE%\.wslconfig` with:
+  ```ini
+  [wsl2]
+  memory=26GB
+  swap=8GB
+  ```
+  Then restart with `wsl --shutdown`.
+- ~80 GB free for the HuggingFace cache + converted IR.
+- Internet access for the weight download.
+
+> **Intel iGPU + WSL2**: requires up-to-date host (Windows) drivers and the `openvino/model_server:latest-gpu` image (which already ships `intel-opencl-icd` and `libze-intel-gpu`). This `docker-compose.yml` already mounts `/dev/dxg` and `/usr/lib/wsl` with the correct `LD_LIBRARY_PATH` so the host driver is visible from inside the container.
+
+> ⚠️ **NPU (Intel AI Boost) is not accessible from WSL2 in this version**. The NPU on Lunar Lake / Meteor Lake / Arrow Lake is exposed on native Linux via `/dev/accel/accel0` with the `intel_vpu` kernel module, but WSL2 does not route that device into the Linux kernel as of today. Verify on the host with `ls /dev/accel` — it will be empty. If you want to use the NPU for inference (~10-20 tok/s on small LLMs without touching the iGPU), you have two paths:
+> - Leave WSL2 and run OVMS directly on Windows (PowerShell + native binary), breaking this Docker stack.
+> - Wait for Microsoft/Intel to enable NPU passthrough in WSL2 (on roadmap, no confirmed date).
 >
-> Por eso este stack usa **iGPU para el LLM y CPU para el VLM**, sin tocar la NPU.
+> That's why this stack uses **iGPU for the LLM and CPU for the VLM**, leaving the NPU untouched.
 
-## Pasos
+## Setup
 
-### 1. Convertir modelos (one-shot)
+### 1. Convert the models (one-shot)
 
 ```bash
 ./scripts/export-models.sh
 ```
 
-Esto lanza un contenedor temporal con `optimum-intel`, descarga los modelos de HuggingFace y los exporta a IR de OpenVINO con compresión INT4. Los resultados quedan en:
+This spawns a throwaway container with `optimum-intel`, downloads the models from HuggingFace and exports them to OpenVINO IR with INT4 compression. Output lands at:
 
 ```
 ovms/models/
 ├── qwen3-8b/
-│   ├── 1/                # openvino_model.xml, tokenizer, etc.
-│   └── graph.pbtxt
+│   └── (openvino_model.xml, tokenizer, etc. + graph.pbtxt)
 └── qwen25-vl-7b/
-    ├── 1/
-    └── graph.pbtxt
+    └── (vision + LM models + tokenizer + graph.pbtxt)
 ```
 
-Si algún modelo es *gated* (no es el caso de éstos, pero por si cambia), pon tu token en `.env` → `HF_TOKEN=hf_...` y vuelve a ejecutar.
+If a model is *gated* (none of these are, but in case it changes later), drop your token in `.env` → `HF_TOKEN=hf_...` and re-run.
 
-### 2. Levantar el stack
+### 2. Start the stack
 
 ```bash
 docker compose up -d
-docker compose logs -f ovms        # primera carga del modelo puede tardar
+docker compose logs -f ovms        # first model load can take a while
 ```
 
-OVMS expone:
-- REST: `http://localhost:8000/v3/chat/completions` (compatible OpenAI)
+OVMS exposes:
+- REST: `http://localhost:8000/v3/chat/completions` (OpenAI-compatible)
 - gRPC: `localhost:9000`
 - Health: `http://localhost:8000/v2/health/ready`
 
 Open WebUI: `http://localhost:3000`
 
-### 3. Verificar OVMS directo (sin Open WebUI)
+### 3. Hit OVMS directly (no Open WebUI)
 
 ```bash
 curl -s http://localhost:8000/v3/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "qwen3-8b",
-    "messages": [{"role":"user","content":"Hola, ¿quién eres?"}],
+    "messages": [{"role":"user","content":"Hi, who are you?"}],
     "max_tokens": 128
   }'
 ```
 
-Para el VLM (Qwen2.5-VL) con imagen:
+For the VLM (Qwen2.5-VL) with an image:
 
 ```bash
 curl -s http://localhost:8000/v3/chat/completions \
@@ -106,7 +132,7 @@ curl -s http://localhost:8000/v3/chat/completions \
     "messages": [{
       "role":"user",
       "content":[
-        {"type":"text","text":"¿Qué ves?"},
+        {"type":"text","text":"What do you see?"},
         {"type":"image_url","image_url":{"url":"https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png"}}
       ]
     }],
@@ -114,98 +140,98 @@ curl -s http://localhost:8000/v3/chat/completions \
   }'
 ```
 
-### 4. Usar desde Open WebUI
+### 4. Use it from Open WebUI
 
-1. Abre `http://localhost:3000`.
-2. Si `OPENWEBUI_AUTH=False`, entras directo. Si lo cambias a `True`, crea cuenta (la primera = admin).
-3. Settings → Models: deberías ver `qwen3-8b` y `qwen25-vl-7b` listados (los obtiene de OVMS vía `/v3/models`).
+1. Open `http://localhost:3000`.
+2. If `OPENWEBUI_AUTH=False`, you're in. If you flip it to `True`, the first account created becomes admin.
+3. Settings → Models: you should see `qwen3-8b` and `qwen25-vl-7b` (Open WebUI pulls them from OVMS via `/v3/models`).
 
-### 5. Configurar el agente
+### 5. Configure the agent
 
-El stack ya levanta **SearXNG** + tiene **function calling** y **RAG** activados por env vars. Sólo queda cargar las tools:
+The stack already launches **SearXNG** and has **function calling** + **RAG** enabled via env vars. All that's left is loading the tools.
 
-**Tools (función-calling, en `./tools/`)**
+**Tools (function calling, in `./tools/`)**
 
-Open WebUI carga las tools desde su BBDD, no desde disco. Las tres `.py` que dejé en `tools/` (`calculator.py`, `web_fetch.py`, `weather.py`) se importan así:
+Open WebUI loads tools from its DB, not from disk. The three `.py` files in `tools/` (`calculator.py`, `web_fetch.py`, `weather.py`) are imported like this:
 
 1. Open WebUI → **Workspace → Tools → "+"**.
-2. Copia/pega el contenido del `.py` y guarda.
-3. En cada conversación, clic en el icono de tools y activa las que quieras.
-4. Asegúrate de marcar **"Native function calling"** en Settings → Interface (usa el formato `tools` de OpenAI, no prompting). Sólo `qwen3-8b` funcionará bien con tools; los VLMs suelen flojear en function calling.
+2. Copy/paste the contents of the `.py` and save.
+3. In each chat, click the tools icon and enable the ones you want.
+4. Make sure **"Native function calling"** is checked under Settings → Interface (uses OpenAI's `tools` format, not prompting). Only `qwen3-8b` works well with tools; VLMs tend to be flaky at function calling.
 
-> Las tools también están montadas dentro del contenedor en `/app/backend/data/tools-staging/` (read-only) por si en el futuro Open WebUI añade auto-import desde disco.
+> The tools are also mounted inside the container at `/app/backend/data/tools-staging/` (read-only) in case a future Open WebUI version adds auto-import from disk.
 
-**Búsqueda web (SearXNG)**
+**Web search (SearXNG)**
 
-Ya está conectado vía `SEARXNG_QUERY_URL`. En cualquier chat, activa el switch **"Web Search"** debajo del input y el modelo consultará SearXNG → leerá los top-5 resultados → contestará con citas.
+Already wired up via `SEARXNG_QUERY_URL`. In any chat, flip the **"Web Search"** switch under the input and the model will query SearXNG → read the top-5 results → answer with citations.
 
-Verifica SearXNG directamente:
+Verify SearXNG directly:
 ```bash
 curl 'http://localhost:8888/search?q=openvino&format=json' | head -c 500
 ```
-(No exponemos SearXNG en host por defecto. Si quieres acceso desde host, añade `ports: ["8888:8080"]` al servicio.)
+(SearXNG is not exposed on the host by default. If you want host access, add `ports: ["8888:8080"]` to the service.)
 
-**RAG con documentos**
+**RAG with documents**
 
-Workspace → Knowledge → crea una colección → sube PDFs/MD/TXT. En el chat, prefija con `#nombre-coleccion` o adjunta el documento directamente. Embeddings: `all-MiniLM-L6-v2` (CPU, se descarga al primer uso).
+Workspace → Knowledge → create a collection → upload PDFs / MD / TXT. In chat, prefix with `#collection-name` or attach the document directly. Embeddings: `all-MiniLM-L6-v2` (CPU, downloaded on first use).
 
-**Imágenes con Qwen2.5-VL**
+**Images with Qwen2.5-VL**
 
-Cambia el modelo a `qwen25-vl-7b`, arrastra una imagen al input, pregunta. La imagen va como `image_url` en el payload OpenAI, OVMS la enruta al modelo VLM.
+Switch the model to `qwen25-vl-7b`, drag an image into the input, ask. The image goes as `image_url` in the OpenAI payload, OVMS routes it to the VLM.
 
-### 6. Agente ReAct (loop Thought / Action / Observation)
+### 6. ReAct agent (Thought / Action / Observation loop)
 
-Además de las tools nativas de Open WebUI (paso 5), el stack incluye un **agente ReAct** corriendo como Pipeline. Aparece en Open WebUI como un modelo más, llamado `react-agent`.
+Beyond Open WebUI's native tools (step 5), the stack ships a **ReAct agent** running as a Pipeline. It appears in Open WebUI as another model, named `react-agent`.
 
-**Cómo funciona**:
-- El pipe ([pipelines/react_agent.py](pipelines/react_agent.py)) recibe el mensaje del usuario.
-- Lanza un loop hasta `MAX_ITERATIONS` (default 6): pide al LLM (`qwen3-8b` vía OVMS) una `Thought + Action + Action Input`, ejecuta la tool, inyecta la `Observation` de vuelta, y repite hasta que el modelo emita `Final Answer:`.
-- Streams el trace completo al chat (puedes desactivarlo poniendo `SHOW_TRACE=False` en las valves).
+**How it works**:
+- The pipe ([pipelines/react_agent.py](pipelines/react_agent.py)) receives the user's message.
+- Runs a loop up to `MAX_ITERATIONS` (default 6): asks the LLM (`qwen3-8b` via OVMS) for a `Thought + Action + Action Input`, executes the tool, injects the `Observation` back, and repeats until the model emits `Final Answer:`.
+- Streams the full trace to the chat (disable it by setting `SHOW_TRACE=False` in the valves).
 
-**Tools internas del agente** (no son las mismas que las del paso 5 — éstas viven dentro del pipeline):
+**Internal agent tools** (different from step 5's — these live inside the pipeline):
 - `search(query)` → SearXNG
-- `fetch(url)` → GET + limpieza HTML
-- `calc(expression)` → aritmética segura
+- `fetch(url)` → GET + HTML cleanup
+- `calc(expression)` → safe arithmetic
 
-**Uso**:
-1. Open WebUI → selector de modelo arriba → elige `react-agent`.
-2. Pregunta algo que requiera buscar/calcular, p.ej. *"¿Cuántos años tiene actualmente el CEO de Nvidia? Calcula su edad si nació el 17 de febrero de 1963."*
-3. Verás cada `Thought / Action / Observation` en el chat, y al final la respuesta.
+**Usage**:
+1. Open WebUI → model selector at the top → pick `react-agent`.
+2. Ask something that requires searching/calculating, e.g. *"How old is Nvidia's CEO right now? Compute his age assuming he was born on Feb 17, 1963."*
+3. You'll see each `Thought / Action / Observation` in the chat, with the final answer at the end.
 
-**Tunear el agente**:
+**Tuning the agent**:
 
-Open WebUI → Admin Panel → Pipelines → `react-agent` → Valves. Puedes ajustar:
+Open WebUI → Admin Panel → Pipelines → `react-agent` → Valves. You can tune:
 - `MAX_ITERATIONS`, `TEMPERATURE`, `MAX_TOKENS_PER_STEP`
-- `MODEL` (cambiar a otro modelo de OVMS)
-- `SHOW_TRACE` (oculta el trace si quieres sólo la respuesta final)
+- `MODEL` (point at a different OVMS model)
+- `SHOW_TRACE` (hide the trace if you only want the final answer)
 
-**Pipelines vs Tools nativas — cuándo usar qué**:
-- *Tools nativas* (paso 5): el LLM elige cuándo llamarlas vía `tools=[...]` en la API. Más rápido, menos transparente.
-- *ReAct pipeline*: loop explícito en Python, controlas iteraciones y prompt, ves todos los pasos. Más robusto cuando el modelo flojea en function calling nativo.
+**Pipelines vs native Tools — when to use which**:
+- *Native tools* (step 5): the LLM decides when to call them via `tools=[...]` in the API. Faster, less transparent.
+- *ReAct pipeline*: explicit loop in Python, you control iterations and prompt, you see every step. More robust when the model is shaky on native function calling.
 
-## OVMS como backend de Claude Code
+## OVMS as a Claude Code backend
 
-[Claude Code](https://docs.claude.com/en/docs/claude-code) es la CLI oficial de Anthropic. Por defecto habla con `api.anthropic.com` usando el formato **Anthropic Messages API**. OVMS habla **OpenAI Chat Completions**. No son lo mismo: necesitas un proxy/router que traduzca entre ambos.
+[Claude Code](https://docs.claude.com/en/docs/claude-code) is Anthropic's official CLI. By default it talks to `api.anthropic.com` using the **Anthropic Messages API** format. OVMS speaks **OpenAI Chat Completions**. They aren't the same: you need a proxy / router that translates between them.
 
-> **Honestidad primero**: usar Qwen3-8B INT4 en lugar de Sonnet/Opus dentro de Claude Code **degrada significativamente** la calidad. Claude Code está afinado y validado contra modelos Claude reales (tool calling preciso, prompt caching, extended thinking, edición quirúrgica de ficheros). Un modelo local de 8B no replica eso. Úsalo para:
-> - Aprender cómo funciona Claude Code por dentro.
-> - Iterar sin gastar créditos en tareas triviales.
-> - Trabajar offline o en entornos air-gapped.
-> - Demos, talleres y educación.
+> **Honesty first**: using Qwen3-8B INT4 inside Claude Code instead of Sonnet / Opus **significantly degrades** quality. Claude Code is tuned and validated against real Claude models (precise tool calling, prompt caching, extended thinking, surgical file editing). A local 8B model does not replicate that. Use it for:
+> - Learning how Claude Code works internally.
+> - Iterating without burning credits on trivial tasks.
+> - Working offline or in air-gapped environments.
+> - Demos, workshops and teaching.
 >
-> **No** lo uses para producir código de producción crítico.
+> **Don't** use it to ship critical production code.
 
-Dos caminos según cómo de fino quieras hilar.
+Two paths depending on how fine you want to weave it.
 
-### Opción A — `claude-code-router` (camino corto)
+### Option A — `claude-code-router` (short path)
 
-Es un router pensado exactamente para enchufar Claude Code a backends compatibles con OpenAI. Sustituye al binario `claude` por `ccr code`.
+A router built exactly for plugging Claude Code into OpenAI-compatible backends. It replaces the `claude` binary with `ccr code`.
 
 ```bash
 npm install -g @musistudio/claude-code-router
 ```
 
-Crea `~/.claude-code-router/config.json`:
+Create `~/.claude-code-router/config.json`:
 
 ```json
 {
@@ -226,23 +252,23 @@ Crea `~/.claude-code-router/config.json`:
 }
 ```
 
-Arranca el router (déjalo en una terminal aparte):
+Start the router (leave it running in another terminal):
 
 ```bash
 ccr start
 ```
 
-Y, en lugar de `claude`, ejecuta:
+And, instead of `claude`, run:
 
 ```bash
 ccr code
 ```
 
-Claude Code pega contra tu OVMS local sin enterarse de que no es Anthropic.
+Claude Code hits your local OVMS without realizing it isn't Anthropic.
 
-### Opción B — `LiteLLM` proxy (camino versátil)
+### Option B — `LiteLLM` proxy (versatile path)
 
-LiteLLM es un proxy que expone una API Anthropic-compatible por delante y habla cualquier backend (OpenAI, OVMS, Ollama, vLLM, etc.) por detrás. Más flexible si vas a juntar varios modelos / proveedores.
+LiteLLM is a proxy that exposes an Anthropic-compatible API on one side and speaks any backend (OpenAI, OVMS, Ollama, vLLM, etc.) on the other. More flexible if you're juggling several models / providers.
 
 ```bash
 pip install 'litellm[proxy]'
@@ -264,92 +290,93 @@ model_list:
       api_key: sk-not-checked
 ```
 
-Lanza el proxy:
+Launch the proxy:
 
 ```bash
 litellm --config litellm.config.yaml --port 4000
 ```
 
-Y dile a Claude Code que apunte ahí:
+And point Claude Code at it:
 
 ```bash
 export ANTHROPIC_BASE_URL=http://localhost:4000
 export ANTHROPIC_AUTH_TOKEN=sk-anything
-claude   # ahora usa tu OVMS local
+claude   # now uses your local OVMS
 ```
 
-> El nombre que pongas en `model_name` debe coincidir con el que Claude Code intenta llamar (suele ser el alias del modelo Sonnet / Haiku del momento). Si Claude Code pide un modelo que LiteLLM no conoce, fallará — añádelo al `model_list` con el mismo `litellm_params`.
+> The `model_name` you set must match the one Claude Code tries to call (usually the alias of the current Sonnet / Haiku model). If Claude Code asks for a model LiteLLM doesn't know, it will fail — add it to the `model_list` with the same `litellm_params`.
 
-### Limitaciones que vas a notar
+### Limitations you'll hit
 
-- **Tool calling**: Qwen3-8B soporta tools, pero su formato puede diverger del que espera Claude Code. Las herramientas internas (`Bash`, `Edit`, `Read`) pueden necesitar un prompt template adaptado o fallar de forma sutil (parámetros mal serializados, llamadas que el modelo "inventa" en texto en vez de en el campo `tools`).
-- **Prompt caching**: Anthropic optimiza con cache breakpoints. OVMS los ignora — cada petición re-procesa todo el contexto.
-- **Ventana de contexto**: Qwen3-8B soporta ~32k tokens; Claude Code asume hasta 200k. Conversaciones largas se truncarán y el modelo "olvidará" el inicio.
-- **Extended thinking**: Qwen3 tiene su propio modo `<think>` (lo verás en las respuestas). No es el "extended thinking" de Claude, pero Claude Code puede confundirse con los tags.
-- **Velocidad**: ~18-20 tok/s en iGPU. Suficiente para tareas cortas, frustrante para `claude` corriendo refactors largos.
+- **Tool calling**: Qwen3-8B supports tools, but its format can drift from what Claude Code expects. The internal tools (`Bash`, `Edit`, `Read`) may need an adapted prompt template or fail silently (badly serialized params, calls the model "invents" in plain text instead of the `tools` field).
+- **Prompt caching**: Anthropic optimizes with cache breakpoints. OVMS ignores them — every request re-processes the whole context.
+- **Context window**: Qwen3-8B supports ~32k tokens; Claude Code assumes up to 200k. Long conversations will truncate and the model will "forget" the beginning.
+- **Extended thinking**: Qwen3 has its own `<think>` mode (you'll see it in responses). It's not Claude's "extended thinking" but Claude Code can get confused with the tags.
+- **Speed**: ~18-20 tok/s on iGPU. Fine for short tasks, frustrating for `claude` doing long refactors.
 
-Sweet spot: pedirle "explica este fichero", "genera un test para esta función", "qué hace este snippet", "renombra esta variable en todo el directorio". Para refactors arquitectónicos, vuelve a Sonnet/Opus.
+Sweet spot: "explain this file", "write a test for this function", "what does this snippet do", "rename this variable across the directory". For architectural refactors, go back to Sonnet / Opus.
 
-## Memoria y rendimiento
+## Memory and performance
 
-**Colocación por defecto** (ver tabla arriba). Números medidos en Core Ultra 7 258V, 32 GB RAM, INT4:
-- `qwen3-8b` → **iGPU Arc 140V**: **~18 tok/s** decoding sostenido, first-token < 1 s. Medido: 145 tokens en 7.9 s.
-- `qwen25-vl-7b` → **CPU**: **~6 tok/s** decoding sostenido. Medido: 191 tokens en 31.6 s. Con imagen, el primer token suma 3-8 s extra por el vision encoder.
+**Default placement** (see Models table). Numbers measured on Core Ultra 7 258V, 32 GB RAM, INT4:
+- `qwen3-8b` → **Arc 140V iGPU**: **~18 tok/s** sustained decoding, first-token < 1 s. Measured: 145 tokens in 7.9 s.
+- `qwen25-vl-7b` → **CPU**: **~6 tok/s** sustained decoding. Measured: 191 tokens in 31.6 s. With an image, the first token adds 3-8 s for the vision encoder.
 
-**Por qué no probamos NPU**: como se explica en *Requisitos*, la NPU de Intel **no es accesible desde WSL2 en esta versión**. Si tuviéramos acceso, sería la candidata ideal para el VLM (libera el iGPU sin penalizar tanto como CPU).
+**Why we didn't try NPU**: as explained in *Requirements*, Intel's NPU **is not accessible from WSL2 in this version**. If we had access, it would be the ideal target for the VLM (frees the iGPU without penalizing as much as CPU).
 
-**Si quieres meter los dos en GPU** (no recomendado, va al filo):
-- Baja `cache_size` en ambos `graph.pbtxt` (KV cache en GB, default 0 = dinámico).
-- Reduce `max_num_seqs` a 4-8 y `max_num_batched_tokens` a 2048.
-- Añade `"KV_CACHE_PRECISION":"u8"` al `plugin_config` — divide la huella del KV cache por 2.
-- Quita `enable_prefix_caching: true`.
-- Aun así, cualquier prompt largo te puede tumbar el iGPU con `USM Host allocation failed`.
+**If you really want both on GPU** (not recommended, runs at the edge):
+- Drop `cache_size` in both `graph.pbtxt` (KV cache in GB, default 0 = dynamic).
+- Reduce `max_num_seqs` to 4-8 and `max_num_batched_tokens` to 2048.
+- Add `"KV_CACHE_PRECISION":"u8"` to `plugin_config` — halves the KV cache footprint.
+- Drop `enable_prefix_caching: true`.
+- Even then, any long prompt can knock the iGPU out with `USM Host allocation failed`.
 
-**La primera generación tras `docker compose up` será lenta** (30-90 s): OVMS compila el modelo para el iGPU y guarda el blob compilado en `/tmp/.ov_cache/` dentro del contenedor. Las siguientes son inmediatas mientras el contenedor viva. Si recreas el contenedor, vuelve a compilar.
+**The first generation after `docker compose up` will be slow** (30-90 s): OVMS compiles the model for the iGPU and stores the compiled blob in `/tmp/.ov_cache/` inside the container. Subsequent ones are immediate while the container is alive. If you recreate the container, it recompiles.
 
-## Estructura
+## Project structure
 
 ```
 .
 ├── docker-compose.yml
-├── .env
+├── .env.example
 ├── scripts/
-│   └── export-models.sh         # conversión HF → OpenVINO INT4
+│   └── export-models.sh         # HF → OpenVINO INT4 conversion
 ├── ovms/
-│   ├── config.json              # lista modelos para OVMS
+│   ├── config.json              # model list for OVMS
 │   └── models/
 │       ├── qwen3-8b/graph.pbtxt
 │       └── qwen25-vl-7b/graph.pbtxt
 ├── searxng/
-│   └── settings.yml             # SearXNG con formato JSON habilitado
-├── tools/                       # tools nativas Open WebUI (paso 5)
+│   └── settings.yml             # SearXNG with JSON format enabled
+├── tools/                       # Open WebUI native tools (step 5)
 │   ├── calculator.py
 │   ├── web_fetch.py
 │   └── weather.py
-├── pipelines/                   # agente ReAct (paso 6)
+├── pipelines/                   # ReAct agent (step 6)
 │   └── react_agent.py
-└── openwebui-data/              # estado persistente de Open WebUI
+└── openwebui-data/              # persistent Open WebUI state (gitignored)
 ```
 
 ## Troubleshooting
 
-- **`/dev/dri` no existe en WSL**: actualiza Windows + drivers Intel Arc. Reinicia WSL: `wsl --shutdown`.
-- **OVMS no detecta GPU**: dentro del contenedor `clinfo` debería listar el iGPU. Si no, revisa permisos de `/dev/dri` (los `group_add` 109/44 cubren los casos comunes; si tu render group tiene otro GID en tu distro, ajústalo).
-- **Open WebUI no ve modelos**: comprueba `docker compose logs openwebui` y que `curl http://localhost:8000/v3/models` desde el host devuelve los dos modelos.
-- **OOM al cargar el segundo modelo**: ver sección "Memoria y rendimiento".
-- **Tools no se ejecutan**: activa "Native function calling" en Open WebUI → Settings → Interface. Si sigue sin llamar tools, el modelo puede no soportar bien `tools` por OVMS — prueba con `qwen3-8b`.
-- **SearXNG devuelve 0 resultados**: el formato JSON necesita estar habilitado en `searxng/settings.yml` (ya lo está). Si SearXNG arranca antes de leer la config, reinicia: `docker compose restart searxng`.
-- **`react-agent` no aparece**: comprueba `docker compose logs pipelines` — debe mostrar "Loaded react-agent". Si no, revisa sintaxis del `.py`. Tras editar `pipelines/react_agent.py`, reinicia: `docker compose restart pipelines`.
-- **ReAct se queda en loop**: el modelo no sigue el formato. Baja `TEMPERATURE` a 0.0–0.1 en las valves; si persiste, ajusta `SYSTEM_PROMPT` en el `.py` con ejemplos few-shot.
+- **`/dev/dri` doesn't exist in WSL**: update Windows + Intel Arc drivers. Restart WSL: `wsl --shutdown`.
+- **OVMS doesn't detect GPU**: from inside the container `clinfo` should list the iGPU. If not, check `/dev/dri` permissions (the `group_add` 992/44 covers WSL2; if your render device has a different GID, adjust it).
+- **Open WebUI doesn't see the models**: check `docker compose logs openwebui` and that `curl http://localhost:8000/v3/models` from the host returns both models.
+- **OOM when loading the second model**: see the "Memory and performance" section.
+- **Tools don't fire**: enable "Native function calling" in Open WebUI → Settings → Interface. If they still don't, the model may not handle `tools` well via OVMS — try `qwen3-8b`.
+- **SearXNG returns 0 results**: the JSON format must be enabled in `searxng/settings.yml` (it already is). If SearXNG starts before reading the config, restart: `docker compose restart searxng`.
+- **`react-agent` doesn't appear**: check `docker compose logs pipelines` — should show "Loaded react-agent". If not, check the `.py` syntax. After editing `pipelines/react_agent.py`, restart: `docker compose restart pipelines`.
+- **ReAct stuck in a loop**: the model isn't following the format. Drop `TEMPERATURE` to 0.0–0.1 in the valves; if it persists, tweak `SYSTEM_PROMPT` in the `.py` with few-shot examples.
+- **Inference hangs silently** (request accepted, no response): the `graph.pbtxt` is missing the `input_stream_handler { SyncSetInputStreamHandler ... }` block needed by OVMS 2026.1.0+ to sync the LOOPBACK back-edge. The graphs in this repo already include it; if you write your own, copy the structure from `ovms/models/qwen3-8b/graph.pbtxt` or regenerate with `ovms --pull --task text_generation --source_model <HF_ID>`.
 
 ---
 
-## Licencia
+## License
 
-[MIT](LICENSE) — uso libre, comercial y privado, sin garantías.
+[MIT](LICENSE) — free for personal, commercial and private use, no warranty.
 
-## Autor
+## Author
 
 **Mariano Ortega** · 2026
 
-Si este proyecto te resulta útil, una estrella ⭐ en GitHub anima a seguir abriendo cosas. PRs y issues bienvenidos.
+If this project helps you, a ⭐ on GitHub keeps me motivated to open more things. PRs and issues welcome.
