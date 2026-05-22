@@ -18,7 +18,7 @@
 <p align="center">
   <img src="docs/img/openwebui-qwen3-igpu.png" alt="Open WebUI running Qwen3-8B on the Intel Arc 140V iGPU — Task Manager performance panel shows 94% GPU utilization at 1950 MHz / 7 W while answering 'What is OpenVINO?'" width="100%">
   <br>
-  <em>Qwen3-8B answering live from the Arc 140V iGPU — 94% utilization, 1950 MHz, 7 W. The whole conversation runs locally, no API calls.</em>
+  <em>Qwen3-8B answering live from the Arc 140V iGPU — 94% utilization, 1950 MHz, 7 W. The whole conversation runs locally, no provider API calls.</em>
 </p>
 
 A local AI agent stack on **Intel Core Ultra (Lunar Lake)** — Qwen3-8B + Qwen2.5-VL-7B in INT4, zero token cost:
