@@ -1,0 +1,135 @@
+services:
+  ovms:
+    image: ${OVMS_IMAGE:-openvino/model_server:latest-gpu}
+    container_name: ovms
+    restart: unless-stopped
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/dxg:/dev/dxg
+    group_add:
+      - "992"   # render GID sintético de WSL2 (no coincide con el grupo "render" del host)
+      - "44"    # video
+    volumes:
+      - ./ovms/config.json:/workspace/config.json:ro
+      - ./ovms/models:/workspace/models:ro
+      - /usr/lib/wsl:/usr/lib/wsl:ro
+    environment:
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/ovms/lib
+    command: >
+      --config_path /workspace/config.json
+      --port ${OVMS_GRPC_PORT:-9000}
+      --rest_port ${OVMS_REST_PORT:-8000}
+      --log_level DEBUG
+    ports:
+      - "${OVMS_REST_PORT:-8000}:8000"
+      - "${OVMS_GRPC_PORT:-9000}:9000"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8000/v2/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    networks:
+      - agent-net
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080/
+      - INSTANCE_NAME=agent-searxng
+      - UWSGI_WORKERS=2
+      - UWSGI_THREADS=4
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - agent-net
+
+  pipelines:
+    image: ghcr.io/open-webui/pipelines:main
+    container_name: pipelines
+    restart: unless-stopped
+    depends_on:
+      ovms:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
+    volumes:
+      - ./pipelines:/app/pipelines
+      - pipelines-cache:/root/.cache
+    environment:
+      - PIPELINES_API_KEY=${PIPELINES_API_KEY:-0p3n-w3bu!}
+    networks:
+      - agent-net
+
+  openwebui:
+    image: ${OPENWEBUI_IMAGE:-ghcr.io/open-webui/open-webui:main}
+    container_name: openwebui
+    restart: unless-stopped
+    depends_on:
+      ovms:
+        condition: service_healthy
+      searxng:
+        condition: service_healthy
+      pipelines:
+        condition: service_started
+    environment:
+      # --- Backends de LLM: OVMS (modelos OpenVINO) + Pipelines (ReAct agent) ---
+      - OPENAI_API_BASE_URLS=http://ovms:8000/v3;http://pipelines:9099
+      - OPENAI_API_KEYS=sk-no-auth-needed;${PIPELINES_API_KEY:-0p3n-w3bu!}
+      - ENABLE_OPENAI_API=True
+      - ENABLE_OLLAMA_API=False
+
+      # --- Auth ---
+      - WEBUI_AUTH=${OPENWEBUI_AUTH:-False}
+
+      # --- Function calling nativo (tools via OpenAI API) ---
+      - ENABLE_FUNCTION_CALLING=True
+
+      # --- Modelos auxiliares (títulos, autocomplete, tags) ---
+      - TASK_MODEL=qwen3-8b
+      - TITLE_GENERATION_PROMPT_TEMPLATE=Genera un título corto (max 5 palabras) para esta conversación.
+
+      # --- RAG con documentos ---
+      - ENABLE_RAG_HYBRID_SEARCH=True
+      - RAG_EMBEDDING_ENGINE=
+      - RAG_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - CHUNK_SIZE=1000
+      - CHUNK_OVERLAP=100
+
+      # --- Búsqueda web vía SearXNG ---
+      - ENABLE_RAG_WEB_SEARCH=True
+      - RAG_WEB_SEARCH_ENGINE=searxng
+      - SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>&format=json
+      - RAG_WEB_SEARCH_RESULT_COUNT=5
+      - RAG_WEB_SEARCH_CONCURRENT_REQUESTS=5
+
+      # --- Fetch de URLs ---
+      - ENABLE_RAG_LOCAL_WEB_FETCH=True
+    volumes:
+      - ./openwebui-data:/app/backend/data
+      - ./tools:/app/backend/data/tools-staging:ro
+    ports:
+      - "${OPENWEBUI_PORT:-3000}:8080"
+    networks:
+      - agent-net
+
+volumes:
+  pipelines-cache:
+
+networks:
+  agent-net:
+    driver: bridge

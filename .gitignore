@@ -1,0 +1,24 @@
+# env con secrets (publicamos .env.example en su lugar)
+.env
+.env.local
+
+# logs
+*.log
+
+# datos persistentes de Open WebUI (chats, usuarios, BBDD sqlite)
+openwebui-data/
+
+# estado interno del agente Claude
+.claude/
+
+# python
+__pycache__/
+*.pyc
+
+# estado de pipelines (valves.json se genera al cargar el pipe)
+pipelines/*/
+
+# pesos y artefactos de modelos (se regeneran con scripts/export-models.sh)
+# Solo trackeamos el graph.pbtxt de cada modelo, el resto se descarga/convierte
+ovms/models/*/*
+!ovms/models/*/graph.pbtxt

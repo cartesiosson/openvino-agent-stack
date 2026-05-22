@@ -1,0 +1,9 @@
+{
+  "model_config_list": [],
+  "mediapipe_config_list": [
+    {
+      "name": "qwen3-8b",
+      "base_path": "/workspace/models/qwen3-8b"
+    }
+  ]
+}

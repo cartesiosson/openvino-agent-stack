@@ -1,0 +1,35 @@
+use_default_settings: true
+
+general:
+  instance_name: "agent-searxng"
+  donation_url: false
+  contact_url: false
+  enable_metrics: false
+
+server:
+  secret_key: "change-me-please-32chars-minimum-aaa"
+  limiter: false
+  image_proxy: false
+  http_protocol_version: "1.1"
+  method: "GET"
+
+ui:
+  static_use_hash: true
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "es"
+  formats:
+    - html
+    - json
+
+engines:
+  - name: wikipedia
+    disabled: false
+  - name: duckduckgo
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: google
+    disabled: false
