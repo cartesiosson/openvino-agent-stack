@@ -1,0 +1,33 @@
+# Dependabot config: keeps GitHub Actions and Docker base images up to date,
+# auto-opens PRs when a CVE or new release shows up.
+# https://docs.github.com/code-security/dependabot
+
+version: 2
+updates:
+  # GitHub Actions used in .github/workflows/
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+      include: scope
+    labels:
+      - dependencies
+      - github-actions
+
+  # Docker base images referenced in docker-compose.yml
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - dependencies
+      - docker

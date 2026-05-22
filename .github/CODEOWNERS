@@ -1,0 +1,7 @@
+# Anyone opening a PR against any path in this repo gets the owner
+# auto-assigned as reviewer. Solo maintainer for now.
+#
+# Syntax: <pattern> <owners...>
+# https://docs.github.com/articles/about-code-owners
+
+* @cartesiosson
