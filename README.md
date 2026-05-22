@@ -55,6 +55,7 @@ Measured throughput: **~18-20 tokens/s** generating with Qwen3-8B INT4 on the Ar
 - [OVMS as a Claude Code backend](#ovms-as-a-claude-code-backend)
 - [Memory and performance](#memory-and-performance)
 - [Project structure](#project-structure)
+- [Intel resources worth knowing](#intel-resources-worth-knowing)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 - [Author](#author)
@@ -508,6 +509,72 @@ Sweet spot: "explain this file", "write a test for this function", "what does th
 │   └── react_agent.py
 └── openwebui-data/              # persistent Open WebUI state (gitignored)
 ```
+
+## Intel resources worth knowing
+
+A short, opinionated list of upstream Intel-side resources behind this stack
+— useful if you want to go deeper, swap components, or contribute.
+
+### OpenVINO toolkit (the runtime under everything)
+
+- 📖 [OpenVINO documentation](https://docs.openvino.ai/) — official docs, the
+  authoritative source for plugin behavior, supported ops and device hints.
+- 🐙 [`openvinotoolkit/openvino`](https://github.com/openvinotoolkit/openvino)
+  — the core C++/Python runtime. Browse the [GPU plugin source](https://github.com/openvinotoolkit/openvino/tree/master/src/plugins/intel_gpu)
+  when GPU compile fails in non-obvious ways (the error we hit with
+  `is_static()` was traced from there).
+- 🐙 [`openvinotoolkit/openvino.genai`](https://github.com/openvinotoolkit/openvino.genai)
+  — the LLM-specific runtime layer (continuous batching, KV cache, chat
+  templates). What OVMS uses under the hood.
+- 🐙 [`openvinotoolkit/nncf`](https://github.com/openvinotoolkit/nncf) —
+  Neural Network Compression Framework. Read the
+  [weight compression docs](https://docs.openvino.ai/2024/openvino-workflow/model-optimization-guide/weight-compression.html)
+  to understand what `--weight-format int4 --group-size 64` actually does.
+
+### OpenVINO Model Server (OVMS)
+
+- 🐙 [`openvinotoolkit/model_server`](https://github.com/openvinotoolkit/model_server)
+  — the server we run. The [demos directory](https://github.com/openvinotoolkit/model_server/tree/main/demos)
+  has canonical `graph.pbtxt` examples for every task (text generation,
+  embeddings, rerank, image generation, VLMs). When in doubt, copy from
+  there.
+- 🛠 [`optimum-intel`](https://github.com/huggingface/optimum-intel) — the
+  HuggingFace bridge that turns `Qwen/Qwen3-8B` into an OpenVINO IR.
+  `scripts/export-models.sh` is essentially a wrapper around its
+  `optimum-cli export openvino`.
+
+### Pre-converted models
+
+- 🤗 [`OpenVINO` organization on HuggingFace](https://huggingface.co/OpenVINO)
+  — official pre-converted OpenVINO IR models (Qwen, Llama, Phi, Mistral,
+  embedding models, etc.). If you don't want to wait for the local INT4
+  conversion, grab one of these directly and skip `scripts/export-models.sh`.
+
+### Hardware
+
+- 💻 [Intel Core Ultra processors (Series 2)](https://www.intel.com/content/www/us/en/products/details/processors/core-ultra.html)
+  — the family. Lunar Lake (Series 2) is what this stack was tuned for, but
+  the same compose file works on Meteor Lake and Arrow Lake H/HX with the
+  same iGPU/CPU placement logic.
+- 💻 [Intel Arc Graphics](https://www.intel.com/content/www/us/en/products/details/discrete-gpus/arc.html)
+  — both the integrated (Arc 140V here) and discrete Arc lineups speak the
+  same OpenVINO plugin. If you have a discrete Arc A770/B580, you can
+  reuse this exact stack with much more headroom for big models.
+
+### Cloud / remote (optional)
+
+- ☁️ [Intel Tiber AI Cloud](https://www.intel.com/content/www/us/en/developer/tools/devcloud/services.html)
+  — Intel's developer cloud (formerly Intel Developer Cloud). Useful if you
+  want to try the same OVMS stack on a larger Xeon + GPU instance before
+  buying hardware.
+
+### Community
+
+- 📰 [OpenVINO blog](https://blog.openvino.ai/) — release notes, perf
+  numbers and model-support announcements. Subscribe if you live in this
+  ecosystem.
+- 🎥 [Intel Developer YouTube](https://www.youtube.com/@IntelSoftware) —
+  OpenVINO/OVMS deep-dives and conference talks.
 
 ## Troubleshooting
 

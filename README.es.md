@@ -54,6 +54,7 @@ Rendimiento medido: **~18-20 tokens/s** generando con Qwen3-8B INT4 sobre la iGP
 - [OVMS como backend de Claude Code](#ovms-como-backend-de-claude-code)
 - [Memoria y rendimiento](#memoria-y-rendimiento)
 - [Estructura](#estructura)
+- [Recursos Intel a tener en cuenta](#recursos-intel-a-tener-en-cuenta)
 - [Troubleshooting](#troubleshooting)
 - [Licencia](#licencia)
 - [Autor](#autor)
@@ -504,6 +505,73 @@ Sweet spot: pedirle "explica este fichero", "genera un test para esta función",
 │   └── react_agent.py
 └── openwebui-data/              # estado persistente de Open WebUI
 ```
+
+## Recursos Intel a tener en cuenta
+
+Lista corta y opinada de recursos upstream del lado Intel detrás de este stack
+— útil si quieres profundizar, cambiar componentes o contribuir.
+
+### Toolkit OpenVINO (el runtime debajo de todo)
+
+- 📖 [Documentación de OpenVINO](https://docs.openvino.ai/) — docs oficiales,
+  la fuente autorizada para comportamiento de plugins, ops soportadas y
+  hints de dispositivo.
+- 🐙 [`openvinotoolkit/openvino`](https://github.com/openvinotoolkit/openvino)
+  — el runtime C++/Python. Echa un ojo al [código fuente del plugin GPU](https://github.com/openvinotoolkit/openvino/tree/master/src/plugins/intel_gpu)
+  cuando un compile GPU falle de forma rara (el error `is_static()` que
+  tuvimos nosotros sale de ahí).
+- 🐙 [`openvinotoolkit/openvino.genai`](https://github.com/openvinotoolkit/openvino.genai)
+  — la capa runtime específica para LLMs (continuous batching, KV cache,
+  chat templates). Lo que OVMS usa por debajo.
+- 🐙 [`openvinotoolkit/nncf`](https://github.com/openvinotoolkit/nncf) —
+  Neural Network Compression Framework. Lee la
+  [documentación de weight compression](https://docs.openvino.ai/2024/openvino-workflow/model-optimization-guide/weight-compression.html)
+  para entender qué hace realmente `--weight-format int4 --group-size 64`.
+
+### OpenVINO Model Server (OVMS)
+
+- 🐙 [`openvinotoolkit/model_server`](https://github.com/openvinotoolkit/model_server)
+  — el servidor que usamos. El [directorio de demos](https://github.com/openvinotoolkit/model_server/tree/main/demos)
+  tiene ejemplos canónicos de `graph.pbtxt` para cada task (generación de
+  texto, embeddings, rerank, generación de imagen, VLMs). Cuando dudes,
+  copia de ahí.
+- 🛠 [`optimum-intel`](https://github.com/huggingface/optimum-intel) — el
+  puente con HuggingFace que convierte `Qwen/Qwen3-8B` en un IR de OpenVINO.
+  Nuestro `scripts/export-models.sh` es esencialmente un wrapper de
+  `optimum-cli export openvino`.
+
+### Modelos pre-convertidos
+
+- 🤗 [Organización `OpenVINO` en HuggingFace](https://huggingface.co/OpenVINO)
+  — modelos IR pre-convertidos oficialmente (Qwen, Llama, Phi, Mistral,
+  embeddings, etc.). Si no quieres esperar a la conversión local a INT4,
+  bájate uno de ahí y sáltate `scripts/export-models.sh`.
+
+### Hardware
+
+- 💻 [Procesadores Intel Core Ultra (Series 2)](https://www.intel.com/content/www/us/en/products/details/processors/core-ultra.html)
+  — la familia. Lunar Lake (Series 2) es para la que está tuneado este
+  stack, pero el mismo compose funciona en Meteor Lake y Arrow Lake H/HX
+  con la misma lógica de colocación iGPU/CPU.
+- 💻 [Intel Arc Graphics](https://www.intel.com/content/www/us/en/products/details/discrete-gpus/arc.html)
+  — la línea integrada (Arc 140V aquí) y la discreta hablan el mismo plugin
+  de OpenVINO. Si tienes un Arc A770/B580 discreto, reutilizas este mismo
+  stack con mucho más margen para modelos grandes.
+
+### Cloud / remoto (opcional)
+
+- ☁️ [Intel Tiber AI Cloud](https://www.intel.com/content/www/us/en/developer/tools/devcloud/services.html)
+  — la cloud de desarrolladores de Intel (antes Intel Developer Cloud).
+  Útil si quieres probar este mismo stack OVMS en una instancia mayor (Xeon
+  + GPU) antes de comprar hardware.
+
+### Comunidad
+
+- 📰 [Blog de OpenVINO](https://blog.openvino.ai/) — release notes, números
+  de rendimiento y anuncios de soporte de modelos. Suscríbete si vives en
+  este ecosistema.
+- 🎥 [Intel Developer en YouTube](https://www.youtube.com/@IntelSoftware) —
+  charlas técnicas sobre OpenVINO/OVMS y conferencias.
 
 ## Troubleshooting
 
