@@ -24,20 +24,29 @@ Casi todo el ecosistema de "agentes con LLM" se basa en consumir tokens contra A
 
 ## Modelos
 
-| Modelo                       | Tipo            | Precisión | Endpoint OpenAI `model` |
-|------------------------------|-----------------|-----------|--------------------------|
-| `Qwen/Qwen3-8B`              | text-generation | INT4      | `qwen3-8b`               |
-| `Qwen/Qwen2.5-VL-7B-Instruct`| image-text      | INT4      | `qwen25-vl-7b`           |
+| Modelo                       | Tipo            | Precisión | Device  | Endpoint OpenAI `model` |
+|------------------------------|-----------------|-----------|---------|--------------------------|
+| `Qwen/Qwen3-8B`              | text-generation | INT4      | **iGPU**| `qwen3-8b`               |
+| `Qwen/Qwen2.5-VL-7B-Instruct`| image-text      | INT4      | **CPU** | `qwen25-vl-7b`           |
+
+> **Por qué no los dos en iGPU**: el Arc 140V comparte RAM con el sistema y su pool de USM no permite alojar simultáneamente dos modelos de 5 GB INT4 + sus KV cache + sus compile blobs. Colocación híbrida (LLM en GPU, VLM en CPU) es el punto dulce para esta clase de hardware: el chat va rápido (18-20 tok/s) y el VLM va a 3-8 tok/s solo cuando subes una imagen, donde el coste del vision encoder ya domina la latencia.
 
 ## Requisitos
 
 - Windows con WSL2 + Docker Desktop, **integración WSL activada** para esta distro.
   - Docker Desktop → Settings → Resources → WSL Integration → habilita tu distro.
 - iGPU expuesta a WSL: `ls /dev/dri` debe mostrar `card0` / `renderD128`.
+- RAM: 32 GB físicos en Windows, **asignados al menos 24 GB a WSL** (por defecto WSL recorta a ~50 % del host). Si `free -h` dentro de WSL muestra menos, crea `%USERPROFILE%\.wslconfig` con `[wsl2]\nmemory=26GB\nswap=8GB` y reinicia con `wsl --shutdown`.
 - ~80 GB libres para el cache de HuggingFace + IR convertidos.
 - Acceso a internet para descargar pesos.
 
-> **Nota**: el iGPU Intel en WSL2 requiere drivers del host (Windows) actualizados y la imagen `openvino/model_server:latest-gpu` (que ya incluye `intel-opencl-icd`).
+> **iGPU Intel + WSL2**: requiere drivers del host (Windows) actualizados y la imagen `openvino/model_server:latest-gpu` (que ya incluye `intel-opencl-icd` y `libze-intel-gpu`). Este `docker-compose.yml` ya monta `/dev/dxg` y `/usr/lib/wsl` con el `LD_LIBRARY_PATH` correcto para que el driver del host se vea desde dentro del contenedor.
+
+> ⚠️ **NPU (Intel AI Boost) no es accesible desde WSL2 en esta versión**. La NPU de Lunar Lake / Meteor Lake / Arrow Lake se expone en Linux nativo vía `/dev/accel/accel0` con el módulo de kernel `intel_vpu`, pero WSL2 no enruta ese device al kernel Linux a día de hoy. En el host se verifica con `ls /dev/accel` — aparecerá vacío. Si quieres usar la NPU para inferencia (p.ej. ~10-20 tok/s en LLMs pequeños sin tocar el iGPU), tienes dos caminos:
+> - Salir de WSL2 y correr OVMS directamente en Windows (PowerShell + binario nativo), rompiendo este stack Docker.
+> - Esperar a que Microsoft/Intel habiliten el passthrough de NPU en WSL2 (en roadmap, sin fecha confirmada).
+>
+> Por eso este stack usa **iGPU para el LLM y CPU para el VLM**, sin tocar la NPU.
 
 ## Pasos
 
@@ -283,11 +292,20 @@ Sweet spot: pedirle "explica este fichero", "genera un test para esta función",
 
 ## Memoria y rendimiento
 
-- 32 GB unificados es ajustado con ambos modelos a la vez en iGPU. Si OVMS falla al cargar el segundo:
-  - Baja `cache_size` en los `graph.pbtxt` (KV cache en GB).
-  - Reduce `max_num_seqs` y `max_num_batched_tokens`.
-  - Como último recurso, cambia `device: "GPU"` por `"NPU"` o `"CPU"` en uno de los dos `graph.pbtxt`.
-- La primera generación tras `up` será lenta: OVMS compila el modelo para el iGPU y cachea en el volumen `ovms-cache`.
+**Colocación por defecto** (ver tabla arriba). Números medidos en Core Ultra 7 258V, 32 GB RAM, INT4:
+- `qwen3-8b` → **iGPU Arc 140V**: **~18 tok/s** decoding sostenido, first-token < 1 s. Medido: 145 tokens en 7.9 s.
+- `qwen25-vl-7b` → **CPU**: **~6 tok/s** decoding sostenido. Medido: 191 tokens en 31.6 s. Con imagen, el primer token suma 3-8 s extra por el vision encoder.
+
+**Por qué no probamos NPU**: como se explica en *Requisitos*, la NPU de Intel **no es accesible desde WSL2 en esta versión**. Si tuviéramos acceso, sería la candidata ideal para el VLM (libera el iGPU sin penalizar tanto como CPU).
+
+**Si quieres meter los dos en GPU** (no recomendado, va al filo):
+- Baja `cache_size` en ambos `graph.pbtxt` (KV cache en GB, default 0 = dinámico).
+- Reduce `max_num_seqs` a 4-8 y `max_num_batched_tokens` a 2048.
+- Añade `"KV_CACHE_PRECISION":"u8"` al `plugin_config` — divide la huella del KV cache por 2.
+- Quita `enable_prefix_caching: true`.
+- Aun así, cualquier prompt largo te puede tumbar el iGPU con `USM Host allocation failed`.
+
+**La primera generación tras `docker compose up` será lenta** (30-90 s): OVMS compila el modelo para el iGPU y guarda el blob compilado en `/tmp/.ov_cache/` dentro del contenedor. Las siguientes son inmediatas mientras el contenedor viva. Si recreas el contenedor, vuelve a compilar.
 
 ## Estructura
 

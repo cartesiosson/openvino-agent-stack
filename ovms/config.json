@@ -4,6 +4,10 @@
     {
       "name": "qwen3-8b",
       "base_path": "/workspace/models/qwen3-8b"
+    },
+    {
+      "name": "qwen25-vl-7b",
+      "base_path": "/workspace/models/qwen25-vl-7b"
     }
   ]
 }

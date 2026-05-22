@@ -1,3 +1,8 @@
+# Canonical OVMS 2026.1.0 LLM/VLM graph (continuous batching).
+# device: CPU porque el iGPU ya está ocupado por qwen3-8b y ambos no caben
+# en la memoria USM del Arc 140V. CPU sirve a 3-8 tok/s, suficiente para
+# queries con imagen (donde el cuello de botella es el vision encoder).
+
 input_stream: "HTTP_REQUEST_PAYLOAD:input"
 output_stream: "HTTP_RESPONSE_PAYLOAD:output"
 
@@ -16,12 +21,21 @@ node: {
   node_options: {
     [type.googleapis.com / mediapipe.LLMCalculatorOptions]: {
       models_path: "./",
-      device: "GPU",
-      plugin_config: '{"CACHE_DIR":"/tmp/.ov_cache/qwen25-vl-7b"}',
+      device: "CPU",
+      max_num_seqs: 64,
       enable_prefix_caching: true,
-      cache_size: 2,
-      max_num_seqs: 2,
-      max_num_batched_tokens: 4096
+      cache_size: 0,
+      plugin_config: '{"CACHE_DIR":"/tmp/.ov_cache/qwen25-vl-7b"}'
+    }
+  }
+  input_stream_handler {
+    input_stream_handler: "SyncSetInputStreamHandler",
+    options {
+      [mediapipe.SyncSetInputStreamHandlerOptions.ext] {
+        sync_set {
+          tag_index: "LOOPBACK:0"
+        }
+      }
     }
   }
 }
