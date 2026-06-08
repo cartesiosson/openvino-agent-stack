@@ -74,8 +74,17 @@ run_convert() {
     '
 }
 
+# Qwen3-8B targets the iGPU (Arc 140V) — default INT4 export works well.
 run_convert "Qwen/Qwen3-8B" "qwen3-8b" "--task text-generation-with-past --trust-remote-code"
-run_convert "Qwen/Qwen2.5-VL-7B-Instruct" "qwen25-vl-7b" "--trust-remote-code --task image-text-to-text"
+
+# Qwen2.5-VL-7B targets the NPU (Intel AI Boost on Lunar Lake) in v0.2.
+# NPU compilation requires:
+#   --sym             symmetric INT4 (NPU compiler doesn't accept asymmetric)
+#   --group-size 128  channel-wise grouping the NPU pipeline expects
+# Keep the model STATEFUL: NPUW_LLM applies its own StatefulToStateless
+# transformation internally during compile. Passing --disable-stateful breaks
+# that pass with "Stateful models without beam_idx input are not supported".
+run_convert "Qwen/Qwen2.5-VL-7B-Instruct" "qwen25-vl-7b" "--trust-remote-code --task image-text-to-text --sym --group-size 128"
 
 echo
 echo "Done."

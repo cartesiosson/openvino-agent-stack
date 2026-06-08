@@ -1,0 +1,17 @@
+# Override for native Linux hosts (Ubuntu, Fedora, etc.).
+# Adds NPU passthrough (/dev/accel/accel0 on Intel Lunar Lake) and the real
+# host render GID so the OVMS container can talk to the iGPU.
+#
+# Use via:
+#   docker compose -f docker-compose.yml -f docker-compose.linux.yml up -d
+# Or just `make up` — the Makefile picks this file when scripts/detect-env.sh
+# reports a native Linux host.
+
+services:
+  ovms:
+    devices:
+      - /dev/dri:/dev/dri        # iGPU (Arc 140V on Lunar Lake)
+      - /dev/accel:/dev/accel    # NPU (Intel AI Boost on Lunar Lake)
+    group_add:
+      - "${RENDER_GID:-105}"     # host render group GID (detected at runtime)
+      - "44"                     # video group

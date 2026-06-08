@@ -1,6 +1,8 @@
 # env con secrets (publicamos .env.example en su lugar)
 .env
 .env.local
+# generado por scripts/detect-env.sh (depende del host)
+.env.detected
 
 # logs
 *.log

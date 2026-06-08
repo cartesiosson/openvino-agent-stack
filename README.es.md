@@ -79,7 +79,7 @@ flowchart LR
     User([👤 Usuario<br/>navegador])
     CC([🖥️ Claude Code CLI<br/>opcional])
 
-    subgraph Stack[Stack Docker Compose en WSL2]
+    subgraph Stack[Stack Docker Compose]
         OWUI[Open WebUI<br/>:3000]
         PIPE[Pipelines<br/>agente ReAct<br/>:9099]
         OVMS[OVMS<br/>OpenVINO Model Server<br/>:8000 / :9000]
@@ -88,7 +88,7 @@ flowchart LR
 
     subgraph HW[Intel Core Ultra 7 258V]
         IGPU[(iGPU Arc 140V<br/>Qwen3-8B INT4<br/>~18 tok/s)]
-        CPU[(CPU<br/>Qwen2.5-VL-7B INT4<br/>~6 tok/s)]
+        NPU[(NPU AI Boost<br/>Qwen2.5-VL-7B INT4<br/>solo Linux nativo)]
     end
 
     Router[claude-code-router<br/>o proxy LiteLLM]
@@ -101,7 +101,7 @@ flowchart LR
     PIPE -->|search JSON| SX
 
     OVMS --> IGPU
-    OVMS --> CPU
+    OVMS --> NPU
 
     CC -.->|Anthropic API| Router
     Router -.->|OpenAI /v3| OVMS
@@ -114,20 +114,40 @@ formato Anthropic Messages de forma nativa.
 
 ## Modelos
 
-| Modelo                       | Tipo            | Precisión | Device  | Endpoint OpenAI `model` |
-|------------------------------|-----------------|-----------|---------|--------------------------|
-| `Qwen/Qwen3-8B`              | text-generation | INT4      | **iGPU**| `qwen3-8b`               |
-| `Qwen/Qwen2.5-VL-7B-Instruct`| image-text      | INT4      | **CPU** | `qwen25-vl-7b`           |
+| Modelo                       | Tipo            | Precisión | Device                                            | Endpoint OpenAI `model` |
+|------------------------------|-----------------|-----------|----------------------------------------------------|--------------------------|
+| `Qwen/Qwen3-8B`              | text-generation | INT4      | **iGPU**                                          | `qwen3-8b`               |
+| `Qwen/Qwen2.5-VL-7B-Instruct`| image-text      | INT4      | **NPU** *(Linux nativo)* / CPU *(fallback WSL2)*  | `qwen25-vl-7b`           |
 
-> **Por qué no los dos en iGPU**: el Arc 140V comparte RAM con el sistema y su pool de USM no permite alojar simultáneamente dos modelos de 5 GB INT4 + sus KV cache + sus compile blobs. Colocación híbrida (LLM en GPU, VLM en CPU) es el punto dulce para esta clase de hardware: el chat va rápido (18-20 tok/s) y el VLM va a 3-8 tok/s solo cuando subes una imagen, donde el coste del vision encoder ya domina la latencia.
+> **Por qué no los dos en iGPU**: el Arc 140V comparte RAM con el sistema y su pool de USM no permite alojar simultáneamente dos modelos de 5 GB INT4 + sus KV cache + sus compile blobs. La colocación de v0.2 (LLM en iGPU, VLM en NPU) es el punto dulce para Lunar Lake: el chat va rápido en el iGPU (18-20 tok/s) y el VLM aprovecha la NPU que de otra forma estaría ociosa, sin robarle ciclos a la CPU. En WSL2, donde la NPU no se expone (`/dev/accel` no pasa al kernel Linux), OVMS hace fallback automático a CPU para el VLM vía el archivo de override — ver *Requisitos*.
 
 <p align="center">
   <img src="docs/img/openwebui-qwen25vl-cpu.png" alt="Qwen2.5-VL-7B describiendo una foto de un mapache desde Open WebUI — el Administrador de tareas muestra GPU Power 0 W, VRAM 6.5 GB y CPU al 98% mientras el VLM ejecuta el vision encoder y genera tokens" width="100%">
   <br>
-  <em>Qwen2.5-VL-7B en CPU describiendo una imagen subida de un mapache — el Administrador de tareas muestra 0 W en el iGPU y 98 % de uso de CPU. El iGPU queda libre para Qwen3-8B; el VLM solo entra en escena cuando hay una imagen que mirar.</em>
+  <em>Captura de v0.1 cuando el VLM aún iba a CPU (98% CPU, 0 W iGPU). En v0.2 sobre Linux nativo la misma query corre en la NPU — la CPU queda libre y el iGPU sigue dedicado a Qwen3-8B.</em>
 </p>
 
 ## Requisitos
+
+Este stack soporta **dos entornos host** y autodetecta cuál estás usando (`scripts/detect-env.sh` se ejecuta de forma perezosa desde el Makefile y escribe `.env.detected`):
+
+### Linux nativo (recomendado en v0.2 — soporte completo de NPU)
+
+- Una distro Linux moderna con kernel 6.10+ y el módulo `intel_vpu` cargado (Ubuntu 24.04 LTS funciona; 26.04+ trae todo por defecto).
+- Drivers de userspace de la NPU Intel:
+  ```bash
+  sudo apt install -y intel-driver-compiler-npu intel-fw-npu intel-level-zero-gpu level-zero
+  ```
+- Los nodos de device de iGPU y NPU presentes:
+  ```bash
+  ls /dev/dri/renderD128     # iGPU
+  ls /dev/accel/accel0       # NPU (Intel AI Boost)
+  ```
+- Tu usuario añadido a los grupos `render` y `video` (para que pueda acceder a los devices sin root).
+- Docker Engine (Compose v2 viene integrado).
+- RAM: 24 GB libres, ~80 GB de disco para el cache de HF + IR convertidos.
+
+### WSL2 (camino legacy — la NPU no está disponible)
 
 - Windows con WSL2 + Docker Desktop, **integración WSL activada** para esta distro.
   - Docker Desktop → Settings → Resources → WSL Integration → habilita tu distro.
@@ -136,13 +156,23 @@ formato Anthropic Messages de forma nativa.
 - ~80 GB libres para el cache de HuggingFace + IR convertidos.
 - Acceso a internet para descargar pesos.
 
-> **iGPU Intel + WSL2**: requiere drivers del host (Windows) actualizados y la imagen `openvino/model_server:latest-gpu` (que ya incluye `intel-opencl-icd` y `libze-intel-gpu`). Este `docker-compose.yml` ya monta `/dev/dxg` y `/usr/lib/wsl` con el `LD_LIBRARY_PATH` correcto para que el driver del host se vea desde dentro del contenedor.
+> **iGPU Intel + WSL2**: requiere drivers del host (Windows) actualizados y la imagen `openvino/model_server:latest-gpu` (que ya incluye `intel-opencl-icd` y `libze-intel-gpu`). El override `docker-compose.wsl2.yml` monta `/dev/dxg` y `/usr/lib/wsl` con el `LD_LIBRARY_PATH` correcto para que el driver del host se vea desde dentro del contenedor.
 
-> ⚠️ **NPU (Intel AI Boost) no es accesible desde WSL2 en esta versión**. La NPU de Lunar Lake / Meteor Lake / Arrow Lake se expone en Linux nativo vía `/dev/accel/accel0` con el módulo de kernel `intel_vpu`, pero WSL2 no enruta ese device al kernel Linux a día de hoy. En el host se verifica con `ls /dev/accel` — aparecerá vacío. Si quieres usar la NPU para inferencia (p.ej. ~10-20 tok/s en LLMs pequeños sin tocar el iGPU), tienes dos caminos:
-> - Salir de WSL2 y correr OVMS directamente en Windows (PowerShell + binario nativo), rompiendo este stack Docker.
-> - Esperar a que Microsoft/Intel habiliten el passthrough de NPU en WSL2 (en roadmap, sin fecha confirmada).
->
-> Por eso este stack usa **iGPU para el LLM y CPU para el VLM**, sin tocar la NPU.
+> ⚠️ **NPU (Intel AI Boost) no es accesible desde WSL2** — `/dev/accel` no pasa al kernel Linux. En WSL2 el VLM hace fallback a CPU automáticamente (cambia `device: "NPU"` → `device: "CPU"` en `ovms/models/qwen25-vl-7b/graph.pbtxt` y elimina las entradas `NPUW_*` del `plugin_config`). Para aprovechar la NPU, usa el camino de Linux nativo.
+
+### Cómo funciona la autodetección
+
+`make up` (y cualquier otro target de `make` que toque Compose) ejecuta primero `scripts/detect-env.sh`, que inspecciona `/proc/version`, `/dev/dri`, `/dev/accel` y el GID del grupo `render` del host, y escribe `.env.detected` con:
+
+| Variable           | Ejemplo                       | Significado |
+|--------------------|-------------------------------|-------------|
+| `COMPOSE_OVERRIDE` | `docker-compose.linux.yml`    | Qué override aplicar encima del compose base. |
+| `RENDER_GID`       | `990`                         | GID real del render group del host (suele diferir del default del contenedor). |
+| `HAS_NPU`          | `1`                           | Si existe `/dev/accel/accel0`. |
+| `HAS_IGPU`         | `1`                           | Si existe `/dev/dri/renderD*`. |
+| `IS_WSL2`          | `0`                           | Detectado desde `/proc/version`. |
+
+Puedes forzar una redetección en cualquier momento con `make detect`.
 
 ## Configuración (`.env`) y token de HuggingFace
 
@@ -222,8 +252,14 @@ Si algún modelo es *gated* (no es el caso de éstos, pero por si cambia), pon t
 ### 2. Levantar el stack
 
 ```bash
-docker compose up -d
-docker compose logs -f ovms        # primera carga del modelo puede tardar
+make up           # detecta WSL2/Linux nativo + NPU y aplica el override correcto
+make logs         # sigue los logs de OVMS (la primera carga del modelo tarda)
+```
+
+O invoca Docker Compose directamente si lo prefieres (tendrás que añadir el override a mano):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.linux.yml up -d   # o wsl2.yml
 ```
 
 OVMS expone:
@@ -469,9 +505,9 @@ Sweet spot: pedirle "explica este fichero", "genera un test para esta función",
 
 **Colocación por defecto** (ver tabla arriba). Números medidos en Core Ultra 7 258V, 32 GB RAM, INT4:
 - `qwen3-8b` → **iGPU Arc 140V**: **~18 tok/s** decoding sostenido, first-token < 1 s. Medido: 145 tokens en 7.9 s.
-- `qwen25-vl-7b` → **CPU**: **~6 tok/s** decoding sostenido. Medido: 191 tokens en 31.6 s. Con imagen, el primer token suma 3-8 s extra por el vision encoder.
+- `qwen25-vl-7b` → **NPU (Intel AI Boost)** en Linux nativo. La torre de visión es pesada en convoluciones y encaja perfectamente en el pipeline de shape estático de la NPU; el decoder LLM corre a través de NPUW (NPU Wrapper) con compilación de shape estático. La primera compilación tarda 1-3 minutos (se cachea después en `/tmp/.ov_cache/qwen25-vl-7b/`). En WSL2 el VLM hace fallback a CPU (~6 tok/s).
 
-**Por qué no probamos NPU**: como se explica en *Requisitos*, la NPU de Intel **no es accesible desde WSL2 en esta versión**. Si tuviéramos acceso, sería la candidata ideal para el VLM (libera el iGPU sin penalizar tanto como CPU).
+**Por qué NPU para el VLM en v0.2**: la NPU estaba ociosa en v0.1 porque WSL2 no exponía `/dev/accel`. En Linux nativo el device es accesible y el VLM es el candidato perfecto: domina la latencia en el vision encoder (convoluciones, shapes fijos — exactamente lo que la NPU hace bien) y moverlo fuera de CPU libera el host para todo lo demás.
 
 **Si quieres meter los dos en GPU** (no recomendado, va al filo):
 - Baja `cache_size` en ambos `graph.pbtxt` (KV cache en GB, default 0 = dinámico).
@@ -576,7 +612,9 @@ Lista corta y opinada de recursos upstream del lado Intel detrás de este stack
 ## Troubleshooting
 
 - **`/dev/dri` no existe en WSL**: actualiza Windows + drivers Intel Arc. Reinicia WSL: `wsl --shutdown`.
-- **OVMS no detecta GPU**: dentro del contenedor `clinfo` debería listar el iGPU. Si no, revisa permisos de `/dev/dri` (los `group_add` 109/44 cubren los casos comunes; si tu render group tiene otro GID en tu distro, ajústalo).
+- **`/dev/accel` no existe en Linux nativo**: el módulo `intel_vpu` no está cargado. Revisa con `lsmod | grep intel_vpu`. En Ubuntu 24.04+ se carga automáticamente; en kernels más antiguos necesitas un kernel HWE 6.10+ y `sudo modprobe intel_vpu`.
+- **OVMS no detecta GPU/NPU**: dentro del contenedor `clinfo` debería listar el iGPU. Si no, revisa permisos de `/dev/dri` — `make detect` rellena el GID del render group del host en el override automáticamente, pero si editas `.env.detected` a mano asegúrate de que `RENDER_GID` coincida con `getent group render`.
+- **La compilación del VLM falla con "device NPU unavailable"**: confirma que el host tiene los drivers NPU (`intel-driver-compiler-npu intel-fw-npu`) y que los IR fueron re-exportados con `--disable-stateful --sym --group-size 128` (lanza `make models` otra vez — el script salta los modelos ya convertidos, así que borra primero `ovms/models/qwen25-vl-7b/openvino_model.xml` para forzar la regeneración).
 - **Open WebUI no ve modelos**: comprueba `docker compose logs openwebui` y que `curl http://localhost:8000/v3/models` desde el host devuelve los dos modelos.
 - **OOM al cargar el segundo modelo**: ver sección "Memoria y rendimiento".
 - **Tools no se ejecutan**: activa "Native function calling" en Open WebUI → Settings → Interface. Si sigue sin llamar tools, el modelo puede no soportar bien `tools` por OVMS — prueba con `qwen3-8b`.

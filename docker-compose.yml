@@ -3,18 +3,9 @@ services:
     image: ${OVMS_IMAGE:-openvino/model_server:latest-gpu}
     container_name: ovms
     restart: unless-stopped
-    devices:
-      - /dev/dri:/dev/dri
-      - /dev/dxg:/dev/dxg
-    group_add:
-      - "992"   # render GID sintético de WSL2 (no coincide con el grupo "render" del host)
-      - "44"    # video
     volumes:
       - ./ovms/config.json:/workspace/config.json:ro
       - ./ovms/models:/workspace/models:ro
-      - /usr/lib/wsl:/usr/lib/wsl:ro
-    environment:
-      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/ovms/lib
     command: >
       --config_path /workspace/config.json
       --port ${OVMS_GRPC_PORT:-9000}

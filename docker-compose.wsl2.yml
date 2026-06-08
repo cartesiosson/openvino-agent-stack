@@ -1,0 +1,22 @@
+# Override for WSL2 hosts (Windows + Docker Desktop with WSL integration).
+# Routes the iGPU through WSL2's synthetic /dev/dxg + /usr/lib/wsl driver
+# bundle. NPU is NOT exposed under WSL2 (no /dev/accel on the host) —
+# use the native Linux override if you need NPU acceleration.
+#
+# Use via:
+#   docker compose -f docker-compose.yml -f docker-compose.wsl2.yml up -d
+# Or just `make up` — the Makefile picks this file when scripts/detect-env.sh
+# reports a WSL2 host.
+
+services:
+  ovms:
+    devices:
+      - /dev/dri:/dev/dri        # WSL2 iGPU passthrough
+      - /dev/dxg:/dev/dxg        # WSL2 DirectX/compute passthrough
+    group_add:
+      - "${RENDER_GID:-992}"     # synthetic WSL2 render GID
+      - "44"                     # video group
+    volumes:
+      - /usr/lib/wsl:/usr/lib/wsl:ro
+    environment:
+      - LD_LIBRARY_PATH=/usr/lib/wsl/lib:/ovms/lib

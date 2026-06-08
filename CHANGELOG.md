@@ -7,6 +7,41 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-27
+
+### Added
+- **Native Linux + NPU support**. The Qwen2.5-VL-7B model now runs on the
+  Intel AI Boost NPU (Lunar Lake) via `/dev/accel/accel0`, freeing the CPU
+  for the rest of the stack. WSL2 retains an automatic CPU fallback.
+- `scripts/detect-env.sh` auto-detects the host environment (WSL2 vs native
+  Linux), the host render GID and whether the NPU is exposed, writing the
+  result to `.env.detected` for Docker Compose to consume.
+- Two Docker Compose overrides: `docker-compose.linux.yml` (native Linux
+  with `/dev/accel` and the real render GID) and `docker-compose.wsl2.yml`
+  (preserves the v0.1 WSL2 behavior with `/dev/dxg` and `/usr/lib/wsl`).
+- New `make detect` target to force-refresh the environment cache.
+
+### Changed
+- `Makefile` now lazily runs the env detection and layers the right
+  override on every `docker compose` invocation, so `make up` / `make down`
+  / `make logs` etc. work the same on WSL2 and native Linux.
+- `docker-compose.yml` is now the device-agnostic base; the WSL2/NPU bits
+  live in the overrides.
+- `ovms/models/qwen25-vl-7b/graph.pbtxt`: `device: "CPU"` → `device: "NPU"`,
+  with the `NPUW_LLM` static-shape plugin config the NPU compiler needs.
+  Drop in `device: "CPU"` and remove the `NPUW_*` keys for WSL2 fallback.
+- `scripts/export-models.sh`: the VLM is now exported with `--sym
+  --group-size 128 --disable-stateful` so the resulting IRs are accepted
+  by the NPU compiler. Qwen3-8B export unchanged.
+- README (EN/ES): new "Native Linux" and "Auto-detection" subsections;
+  the v0.1 NPU-not-accessible warning was replaced with the new behavior.
+
+### Fixed
+- Render group GID is now picked up from the host (`getent group render` →
+  e.g. `990` on Ubuntu 24.04) instead of hard-coded `992` from WSL2,
+  removing the `Permission denied` on `/dev/dri/renderD128` that some
+  users hit on native distros.
+
 ## [0.1.0] - 2026-05-22
 
 ### Added
